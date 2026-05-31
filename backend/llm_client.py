@@ -4,18 +4,18 @@ import time
 import requests
 from config import OLLAMA_BASE_URL, OLLAMA_MODEL
 
-_sem = threading.Semaphore(2)  # max 2 concurrent LLM calls
+_sem = threading.Semaphore(1)  # 1 at a time — Qwen3 on CPU needs serialized access
 _lock = threading.Lock()
 _stats = {"total": 0, "errors": 0, "total_ms": 0.0}
 
 
-def query_llm(prompt: str, model: str = OLLAMA_MODEL, timeout: int = 120,
+def query_llm(prompt: str, model: str = OLLAMA_MODEL, timeout: int = 300,
               system: str = "") -> str:
     """
     Send a prompt to the local Ollama instance and return the response text.
     Blocks if 2 requests are already in flight (deadlock prevention via semaphore).
     """
-    acquired = _sem.acquire(timeout=timeout)
+    acquired = _sem.acquire(timeout=600)   # wait up to 10 min for a slot
     if not acquired:
         raise TimeoutError("LLM semaphore timeout — too many concurrent requests")
     t0 = time.time()

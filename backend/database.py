@@ -9,7 +9,18 @@ from contextlib import contextmanager
 from config import DATABASE_URL
 
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+def _set_wal(dbapi_con, _):
+    dbapi_con.execute("PRAGMA journal_mode=WAL")
+    dbapi_con.execute("PRAGMA busy_timeout=5000")
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    pool_size=10,
+    max_overflow=20,
+)
+from sqlalchemy import event as _sa_event
+_sa_event.listen(engine, "connect", _set_wal)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

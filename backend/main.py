@@ -172,8 +172,8 @@ def api_logs(agent: str = Query(None), limit: int = Query(100, le=500)):
         if agent:
             q = q.filter_by(agent_name=agent)
         rows = q.limit(limit).all()
-    return [{"id": r.id, "agent": r.agent_name, "level": r.level,
-             "message": r.message, "ts": r.created_at.isoformat()} for r in rows]
+        return [{"id": r.id, "agent": r.agent_name, "level": r.level,
+                 "message": r.message, "ts": r.created_at.isoformat()} for r in rows]
 
 
 @app.get("/api/runs")
@@ -183,12 +183,12 @@ def api_runs(agent: str = Query(None), limit: int = Query(50, le=200)):
         if agent:
             q = q.filter_by(agent_name=agent)
         rows = q.limit(limit).all()
-    return [{
-        "id": r.id, "agent": r.agent_name, "status": r.status,
-        "started": r.started_at.isoformat(),
-        "finished": r.finished_at.isoformat() if r.finished_at else None,
-        "duration_s": r.duration_s, "message": r.message,
-    } for r in rows]
+        return [{
+            "id": r.id, "agent": r.agent_name, "status": r.status,
+            "started": r.started_at.isoformat(),
+            "finished": r.finished_at.isoformat() if r.finished_at else None,
+            "duration_s": r.duration_s, "message": r.message,
+        } for r in rows]
 
 
 @app.get("/api/stocks")
@@ -198,27 +198,28 @@ def api_stocks(ticker: str = Query(None), limit: int = Query(100, le=500)):
         if ticker:
             q = q.filter_by(ticker=ticker)
         rows = q.limit(limit).all()
-    return [{
-        "ticker": r.ticker, "price": r.price, "change_pct": r.change_pct,
-        "volume": r.volume, "captured_at": r.captured_at.isoformat(),
-    } for r in rows]
+        return [{
+            "ticker": r.ticker, "price": r.price, "change_pct": r.change_pct,
+            "volume": r.volume, "captured_at": r.captured_at.isoformat(),
+        } for r in rows]
 
 
 @app.get("/api/emails")
 def api_emails(limit: int = Query(50, le=200)):
     with get_db() as db:
         rows = db.query(EmailRecord).order_by(EmailRecord.sent_at.desc()).limit(limit).all()
-    return [{"id": r.id, "agent": r.agent_name, "subject": r.subject,
-             "recipient": r.recipient, "sent_at": r.sent_at.isoformat(),
-             "success": r.success} for r in rows]
+        return [{"id": r.id, "agent": r.agent_name, "subject": r.subject,
+                 "recipient": r.recipient, "sent_at": r.sent_at.isoformat(),
+                 "success": r.success} for r in rows]
 
 
 @app.get("/api/metrics/history")
 def api_metrics_history(limit: int = Query(60, le=300)):
     with get_db() as db:
         rows = db.query(SystemMetric).order_by(SystemMetric.captured_at.desc()).limit(limit).all()
-    return [{"cpu": r.cpu_pct, "ram": r.ram_pct, "disk": r.disk_pct,
-             "ts": r.captured_at.isoformat()} for r in reversed(rows)]
+        result = [{"cpu": r.cpu_pct, "ram": r.ram_pct, "disk": r.disk_pct,
+                   "ts": r.captured_at.isoformat()} for r in rows]
+    return list(reversed(result))
 
 
 @app.get("/api/ollama/status")

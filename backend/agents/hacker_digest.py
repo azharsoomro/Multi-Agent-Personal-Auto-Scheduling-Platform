@@ -60,32 +60,21 @@ def _fetch_top_stories(limit: int) -> list[dict]:
 
 
 def _curate_stories(stories: list[dict]) -> list[dict]:
-    """Ask LLM to pick the 10 most interesting and add a one-line takeaway."""
-    titles_block = "\n".join(
-        f"{i+1}. [{s['score']}pts] {s['title']}" for i, s in enumerate(stories)
-    )
-    prompt = (
-        "You are a tech-savvy curator. From this Hacker News list, pick the 10 most "
-        "interesting stories for a software engineer. Reply with a JSON array of objects: "
-        '{"rank": 1, "index": <1-based index from list>, "takeaway": "<1 sentence why it matters>"}.\n\n'
-        + titles_block + "\n\nOutput only valid JSON array."
-    )
+    """Add a one-line takeaway to each of the top 10 stories (by score)."""
+    import json
+    top10 = stories[:10]
     curated = []
-    try:
-        raw = query_llm(prompt, system="You are a tech curator. Output only JSON.")
-        raw = raw.strip().strip("```json").strip("```").strip()
-        import json
-        picks = json.loads(raw)
-        for pick in picks[:10]:
-            idx = int(pick.get("index", 1)) - 1
-            if 0 <= idx < len(stories):
-                s = dict(stories[idx])
-                s["takeaway"] = pick.get("takeaway", "")
-                curated.append(s)
-    except Exception:
-        # fallback: top 10 by score
-        for s in stories[:10]:
-            curated.append({**s, "takeaway": ""})
+    for s in top10:
+        prompt = (
+            f"In one sentence (max 15 words), why does this Hacker News story matter "
+            f"to a software engineer?\nTitle: {s['title']}\nOutput only the sentence."
+        )
+        try:
+            takeaway = query_llm(prompt, system="You are a concise tech writer. One sentence only.")
+            takeaway = takeaway.strip().strip('"')
+        except Exception:
+            takeaway = ""
+        curated.append({**s, "takeaway": takeaway})
     return curated
 
 

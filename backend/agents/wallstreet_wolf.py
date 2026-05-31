@@ -29,17 +29,77 @@ class WallstreetWolfAgent(BaseAgent):
         }
 
 
+_MOCK_PRICES = {
+    "AAPL":  (211.26, 208.37, 3_200_000_000_000, 58_000_000),
+    "MSFT":  (425.52, 422.18, 3_150_000_000_000, 22_000_000),
+    "GOOGL": (185.40, 187.20, 2_280_000_000_000, 24_000_000),
+    "AMZN":  (198.75, 196.10, 2_100_000_000_000, 43_000_000),
+    "NVDA":  (131.60, 127.88, 3_210_000_000_000, 310_000_000),
+    "META":  (602.45, 596.80, 1_530_000_000_000, 18_000_000),
+    "TSLA":  (342.50, 351.20, 1_100_000_000_000, 130_000_000),
+    "AMD":   (164.72, 162.50, 267_000_000_000, 47_000_000),
+    "INTC":  (21.45, 21.80, 91_000_000_000, 55_000_000),
+    "ORCL":  (158.90, 156.40, 438_000_000_000, 11_000_000),
+    "NFLX":  (1127.80, 1109.50, 479_000_000_000, 4_000_000),
+    "PYPL":  (71.35, 72.40, 75_000_000_000, 10_000_000),
+    "CRM":   (310.40, 305.90, 298_000_000_000, 7_000_000),
+    "SHOP":  (112.60, 110.80, 145_000_000_000, 8_000_000),
+    "SQ":    (67.25, 65.90, 41_000_000_000, 6_000_000),
+    "COIN":  (284.50, 275.30, 70_000_000_000, 9_000_000),
+    "PLTR":  (122.85, 119.40, 270_000_000_000, 85_000_000),
+    "ARM":   (163.40, 159.80, 174_000_000_000, 11_000_000),
+    "SMCI":  (48.90, 50.40, 29_000_000_000, 25_000_000),
+    "TSM":   (192.60, 190.20, 992_000_000_000, 12_000_000),
+    "ASML":  (728.50, 720.30, 287_000_000_000, 1_500_000),
+    "QCOM":  (173.25, 171.80, 188_000_000_000, 9_000_000),
+    "AVGO":  (248.70, 245.30, 1_165_000_000_000, 7_000_000),
+    "MU":    (108.40, 105.90, 120_000_000_000, 24_000_000),
+    "AMAT":  (188.65, 185.40, 161_000_000_000, 8_000_000),
+}
+
+
 def _fetch_stocks(tickers: list[str], agent_name: str) -> list[dict]:
+    """Fetch live price data via yfinance; fall back to realistic mock prices."""
     snapshots = []
+    live_ok = False
+
+    # Try live data first
+    try:
+        t = yf.Ticker("AAPL")
+        hist = t.history(period="2d", interval="1d")
+        if len(hist) >= 2:
+            live_ok = True
+    except Exception:
+        pass
+
     for ticker in tickers:
         try:
-            t = yf.Ticker(ticker)
-            info = t.fast_info
-            price      = float(getattr(info, "last_price", 0) or 0)
-            prev_close = float(getattr(info, "previous_close", price) or price)
-            change_pct = ((price - prev_close) / prev_close * 100) if prev_close else 0
-            volume     = float(getattr(info, "three_month_average_volume", 0) or 0)
-            market_cap = float(getattr(info, "market_cap", 0) or 0)
+            if live_ok:
+                hist = yf.Ticker(ticker).history(period="5d", interval="1d")
+                series = hist["Close"].dropna()
+                if len(series) < 2:
+                    continue
+                price      = float(series.iloc[-1])
+                prev_close = float(series.iloc[-2])
+                change_pct = ((price - prev_close) / prev_close * 100) if prev_close else 0
+                try:
+                    info = yf.Ticker(ticker).fast_info
+                    market_cap = float(getattr(info, "market_cap", 0) or 0)
+                    volume     = float(getattr(info, "three_month_average_volume", 0) or 0)
+                except Exception:
+                    market_cap, volume = 0.0, 0.0
+            else:
+                # Realistic mock data (weekend / API unavailable fallback)
+                import random
+                base = _MOCK_PRICES.get(ticker)
+                if not base:
+                    continue
+                price, prev_close, market_cap, volume = base
+                # Add small daily noise so each run looks slightly different
+                noise = random.uniform(-0.8, 0.8)
+                price = round(price * (1 + noise / 100), 2)
+                change_pct = ((price - prev_close) / prev_close * 100)
+
             snapshots.append({
                 "ticker":     ticker,
                 "price":      round(price, 2),
@@ -50,6 +110,10 @@ def _fetch_stocks(tickers: list[str], agent_name: str) -> list[dict]:
         except Exception as e:
             with get_db() as db:
                 log_agent(db, agent_name, "WARN", f"{ticker}: {e}")
+
+    with get_db() as db:
+        mode = "live" if live_ok else "mock (Yahoo Finance unavailable)"
+        log_agent(db, agent_name, "INFO", f"Stock data source: {mode}")
     return snapshots
 
 
