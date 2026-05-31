@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Agent Platform</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <span class="logo-icon">⚡</span>
+      <span class="logo-text">AgentOS</span>
+    </div>
+    <nav>
+      <a href="#" class="nav-link active" data-tab="dashboard">
+        <span class="nav-icon">📊</span> Dashboard
+      </a>
+      <a href="#" class="nav-link" data-tab="agents">
+        <span class="nav-icon">🤖</span> Agents
+      </a>
+      <a href="#" class="nav-link" data-tab="scheduler">
+        <span class="nav-icon">⏰</span> Scheduler
+      </a>
+      <a href="#" class="nav-link" data-tab="stocks">
+        <span class="nav-icon">📈</span> Stocks
+      </a>
+      <a href="#" class="nav-link" data-tab="emails">
+        <span class="nav-icon">📧</span> Emails
+      </a>
+      <a href="#" class="nav-link" data-tab="logs">
+        <span class="nav-icon">📝</span> Logs
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="ollama-status" id="ollamaStatus">
+        <span class="status-dot" id="ollamaDot"></span>
+        <span id="ollamaLabel">Checking Ollama...</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main">
+    <header class="topbar">
+      <h1 class="page-title" id="pageTitle">Dashboard</h1>
+      <div class="topbar-right">
+        <span class="ws-badge" id="wsBadge">● Connecting</span>
+        <span class="time" id="clock"></span>
+      </div>
+    </header>
+
+    <!-- ── DASHBOARD TAB ── -->
+    <div id="tab-dashboard" class="tab-content active">
+      <div class="metrics-row">
+        <div class="metric-card">
+          <div class="metric-icon">🖥️</div>
+          <div class="metric-val" id="cpuVal">—</div>
+          <div class="metric-lbl">CPU</div>
+          <div class="metric-bar"><div class="bar-fill cpu-fill" id="cpuBar"></div></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon">💾</div>
+          <div class="metric-val" id="ramVal">—</div>
+          <div class="metric-lbl">RAM</div>
+          <div class="metric-bar"><div class="bar-fill ram-fill" id="ramBar"></div></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon">💿</div>
+          <div class="metric-val" id="diskVal">—</div>
+          <div class="metric-lbl">Disk</div>
+          <div class="metric-bar"><div class="bar-fill disk-fill" id="diskBar"></div></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon">🧠</div>
+          <div class="metric-val" id="llmVal">—</div>
+          <div class="metric-lbl">LLM Calls</div>
+          <div class="metric-sub" id="llmAvg">avg — ms</div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <!-- Agent cards -->
+        <div class="panel">
+          <div class="panel-header">🤖 Agent Status</div>
+          <div id="agentCards" class="agent-cards"></div>
+        </div>
+
+        <!-- Live log feed -->
+        <div class="panel">
+          <div class="panel-header">📡 Live Events</div>
+          <div id="liveFeed" class="live-feed"></div>
+        </div>
+      </div>
+
+      <!-- Resource chart -->
+      <div class="panel" style="margin-top:20px;">
+        <div class="panel-header">📊 Resource History (last 30 readings)</div>
+        <canvas id="resourceChart" height="80"></canvas>
+      </div>
+    </div>
+
+    <!-- ── AGENTS TAB ── -->
+    <div id="tab-agents" class="tab-content">
+      <div class="agent-grid" id="agentDetailCards"></div>
+    </div>
+
+    <!-- ── SCHEDULER TAB ── -->
+    <div id="tab-scheduler" class="tab-content">
+      <div class="panel">
+        <div class="panel-header">⏰ Scheduled Jobs</div>
+        <table class="data-table" id="schedulerTable">
+          <thead>
+            <tr><th>Agent</th><th>Next Run (UTC)</th><th>Trigger</th><th>Update Cron</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── STOCKS TAB ── -->
+    <div id="tab-stocks" class="tab-content">
+      <div class="panel">
+        <div class="panel-header">📈 Latest Stock Snapshots</div>
+        <table class="data-table" id="stocksTable">
+          <thead>
+            <tr><th>Ticker</th><th>Price</th><th>Change %</th><th>Captured</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── EMAILS TAB ── -->
+    <div id="tab-emails" class="tab-content">
+      <div class="panel">
+        <div class="panel-header">📧 Sent Emails</div>
+        <table class="data-table" id="emailsTable">
+          <thead>
+            <tr><th>Agent</th><th>Subject</th><th>Recipient</th><th>Sent At</th><th>Status</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── LOGS TAB ── -->
+    <div id="tab-logs" class="tab-content">
+      <div class="panel">
+        <div class="panel-header">
+          📝 Agent Logs
+          <select id="logAgentFilter" style="float:right;padding:4px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#94a3b8;">
+            <option value="">All Agents</option>
+            <option value="ai_times">AI-Times</option>
+            <option value="mailman">Mailman</option>
+            <option value="wallstreet_wolf">Wallstreet Wolf</option>
+            <option value="hacker_digest">Hacker Digest</option>
+            <option value="orchestrator">Orchestrator</option>
+            <option value="scheduler">Scheduler</option>
+          </select>
+        </div>
+        <div id="logsContainer" class="logs-container"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 900 620" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#1e293b"/>
+    </linearGradient>
+    <linearGradient id="orchGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4f46e5"/>
+      <stop offset="100%" style="stop-color:#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="llmGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0891b2"/>
+      <stop offset="100%" style="stop-color:#0284c7"/>
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="620" fill="url(#bgGrad)"/>
+
+  <!-- Title -->
+  <text x="450" y="40" text-anchor="middle" fill="#e2e8f0" font-size="22" font-weight="700">⚡ Multi-Agent Auto-Scheduling Platform</text>
+  <text x="450" y="62" text-anchor="middle" fill="#64748b" font-size="12">Python 3.12 · FastAPI · SQLite · Ollama/Qwen3 · APScheduler</text>
+
+  <!-- ── Orchestrator (top center) ── -->
+  <rect x="230" y="85" width="440" height="110" rx="14" fill="url(#orchGrad)" filter="url(#shadow)"/>
+  <text x="450" y="110" text-anchor="middle" fill="#fff" font-size="15" font-weight="700">🎯 Main Orchestrator</text>
+  <text x="310" y="132" fill="#c7d2fe" font-size="11">• CPU / RAM / Disk monitoring</text>
+  <text x="310" y="150" fill="#c7d2fe" font-size="11">• LLM semaphore queue (max 2 concurrent)</text>
+  <text x="310" y="168" fill="#c7d2fe" font-size="11">• Deadlock prevention · WebSocket broadcast</text>
+  <text x="570" y="132" fill="#c7d2fe" font-size="11">• APScheduler (cron)</text>
+  <text x="570" y="150" fill="#c7d2fe" font-size="11">• Agent lifecycle mgmt</text>
+  <text x="570" y="168" fill="#c7d2fe" font-size="11">• Resource thresholds</text>
+
+  <!-- Arrows from orchestrator to agents -->
+  <line x1="300" y1="195" x2="115" y2="285" stroke="#4f46e5" stroke-width="2" stroke-dasharray="6,3"/>
+  <line x1="370" y1="195" x2="265" y2="285" stroke="#4f46e5" stroke-width="2" stroke-dasharray="6,3"/>
+  <line x1="450" y1="195" x2="450" y2="285" stroke="#4f46e5" stroke-width="2" stroke-dasharray="6,3"/>
+  <line x1="530" y1="195" x2="635" y2="285" stroke="#4f46e5" stroke-width="2" stroke-dasharray="6,3"/>
+  <line x1="600" y1="195" x2="785" y2="285" stroke="#4f46e5" stroke-width="2" stroke-dasharray="6,3"/>
+
+  <!-- ── Agent 1: AI-Times ── -->
+  <rect x="30" y="285" width="160" height="130" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="30" y="285" width="160" height="34" rx="12" fill="#0f766e"/>
+  <rect x="30" y="305" width="160" height="14" fill="#0f766e"/>
+  <text x="110" y="307" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">📺 AI-Times</text>
+  <text x="110" y="330" text-anchor="middle" fill="#94a3b8" font-size="10">YouTube Data API v3</text>
+  <text x="110" y="346" text-anchor="middle" fill="#94a3b8" font-size="10">↓ top AI videos (7 days)</text>
+  <text x="110" y="362" text-anchor="middle" fill="#94a3b8" font-size="10">↓ LLM intro paragraph</text>
+  <text x="110" y="378" text-anchor="middle" fill="#94a3b8" font-size="10">↓ HTML email digest</text>
+  <text x="110" y="400" text-anchor="middle" fill="#6ee7b7" font-size="10" font-weight="600">Daily @ 08:00 UTC</text>
+
+  <!-- ── Agent 2: Mailman ── -->
+  <rect x="205" y="285" width="160" height="130" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="205" y="285" width="160" height="34" rx="12" fill="#7c3aed"/>
+  <rect x="205" y="305" width="160" height="14" fill="#7c3aed"/>
+  <text x="285" y="307" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">📬 Mailman</text>
+  <text x="285" y="330" text-anchor="middle" fill="#94a3b8" font-size="10">Gmail OAuth API</text>
+  <text x="285" y="346" text-anchor="middle" fill="#94a3b8" font-size="10">↓ fetch unread emails</text>
+  <text x="285" y="362" text-anchor="middle" fill="#94a3b8" font-size="10">↓ LLM classify + label</text>
+  <text x="285" y="378" text-anchor="middle" fill="#94a3b8" font-size="10">↓ star urgent / alert</text>
+  <text x="285" y="400" text-anchor="middle" fill="#6ee7b7" font-size="10" font-weight="600">Every 15 min</text>
+
+  <!-- ── Agent 3: Wallstreet Wolf ── -->
+  <rect x="380" y="285" width="160" height="130" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="380" y="285" width="160" height="34" rx="12" fill="#065f46"/>
+  <rect x="380" y="305" width="160" height="14" fill="#065f46"/>
+  <text x="460" y="307" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">🐺 Wallstreet Wolf</text>
+  <text x="460" y="330" text-anchor="middle" fill="#94a3b8" font-size="10">Yahoo Finance (yfinance)</text>
+  <text x="460" y="346" text-anchor="middle" fill="#94a3b8" font-size="10">↓ 25 stock tickers</text>
+  <text x="460" y="362" text-anchor="middle" fill="#94a3b8" font-size="10">↓ LLM market commentary</text>
+  <text x="460" y="378" text-anchor="middle" fill="#94a3b8" font-size="10">↓ daily market email</text>
+  <text x="460" y="400" text-anchor="middle" fill="#6ee7b7" font-size="10" font-weight="600">Weekdays @ 16:30 UTC</text>
+
+  <!-- ── Agent 4: Hacker Digest ── -->
+  <rect x="555" y="285" width="160" height="130" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="555" y="285" width="160" height="34" rx="12" fill="#92400e"/>
+  <rect x="555" y="305" width="160" height="14" fill="#92400e"/>
+  <text x="635" y="307" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">🔥 Hacker Digest</text>
+  <text x="635" y="330" text-anchor="middle" fill="#94a3b8" font-size="10">Hacker News API (free)</text>
+  <text x="635" y="346" text-anchor="middle" fill="#94a3b8" font-size="10">↓ top 30 stories</text>
+  <text x="635" y="362" text-anchor="middle" fill="#94a3b8" font-size="10">↓ LLM curates top 10</text>
+  <text x="635" y="378" text-anchor="middle" fill="#94a3b8" font-size="10">↓ digest email</text>
+  <text x="635" y="400" text-anchor="middle" fill="#6ee7b7" font-size="10" font-weight="600">Daily @ 09:00 UTC</text>
+
+  <!-- ── Agent 5: System Monitor ── -->
+  <rect x="730" y="285" width="140" height="130" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="730" y="285" width="140" height="34" rx="12" fill="#7f1d1d"/>
+  <rect x="730" y="305" width="140" height="14" fill="#7f1d1d"/>
+  <text x="800" y="307" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">📊 Monitor</text>
+  <text x="800" y="330" text-anchor="middle" fill="#94a3b8" font-size="10">psutil (local)</text>
+  <text x="800" y="346" text-anchor="middle" fill="#94a3b8" font-size="10">CPU · RAM · Disk</text>
+  <text x="800" y="362" text-anchor="middle" fill="#94a3b8" font-size="10">→ SQLite metrics</text>
+  <text x="800" y="378" text-anchor="middle" fill="#94a3b8" font-size="10">→ WS broadcast</text>
+  <text x="800" y="400" text-anchor="middle" fill="#6ee7b7" font-size="10" font-weight="600">Every 30 sec</text>
+
+  <!-- Arrows agents → Ollama -->
+  <line x1="110" y1="415" x2="380" y2="488" stroke="#0891b2" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="285" y1="415" x2="415" y2="488" stroke="#0891b2" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="460" y1="415" x2="450" y2="488" stroke="#0891b2" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="635" y1="415" x2="485" y2="488" stroke="#0891b2" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- ── Ollama / Qwen3 ── -->
+  <rect x="310" y="488" width="280" height="70" rx="14" fill="url(#llmGrad)" filter="url(#shadow)"/>
+  <text x="450" y="516" text-anchor="middle" fill="#fff" font-size="15" font-weight="700">🧠 Ollama · Qwen3</text>
+  <text x="450" y="537" text-anchor="middle" fill="#bae6fd" font-size="11">100% Local LLM Inference · No cloud API calls</text>
+  <text x="450" y="552" text-anchor="middle" fill="#bae6fd" font-size="11">Semaphore queue · max 2 concurrent requests</text>
+
+  <!-- ── SQLite + Dashboard ── -->
+  <!-- SQLite -->
+  <rect x="55" y="488" width="155" height="70" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+  <text x="132" y="516" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="700">🗄️ SQLite</text>
+  <text x="132" y="534" text-anchor="middle" fill="#94a3b8" font-size="10">agent_runs · agent_logs</text>
+  <text x="132" y="550" text-anchor="middle" fill="#94a3b8" font-size="10">stock_snapshots · emails · metrics</text>
+
+  <!-- Dashboard -->
+  <rect x="640" y="488" width="210" height="70" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+  <text x="745" y="516" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="700">📊 Web Dashboard</text>
+  <text x="745" y="534" text-anchor="middle" fill="#94a3b8" font-size="10">FastAPI · WebSocket · HTML/JS</text>
+  <text x="745" y="550" text-anchor="middle" fill="#94a3b8" font-size="10">localhost:8000 · real-time events</text>
+
+  <!-- Arrows to SQLite and dashboard from orchestrator area -->
+  <line x1="230" y1="140" x2="132" y2="488" stroke="#334155" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="670" y1="140" x2="745" y2="488" stroke="#334155" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- Legend -->
+  <rect x="30" y="580" width="840" height="28" rx="6" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <line x1="60" y1="594" x2="90" y2="594" stroke="#4f46e5" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="95" y="598" fill="#94a3b8" font-size="11">Orchestration</text>
+  <line x1="200" y1="594" x2="230" y2="594" stroke="#0891b2" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="235" y="598" fill="#94a3b8" font-size="11">LLM Calls</text>
+  <line x1="320" y1="594" x2="350" y2="594" stroke="#334155" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="355" y="598" fill="#94a3b8" font-size="11">Data Persistence / UI</text>
+  <text x="700" y="598" fill="#64748b" font-size="10">© 2025 Multi-Agent Platform</text>
+</svg>

@@ -1,0 +1,11 @@
+.env
+data/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+gmail_credentials.json
+data/gmail_token.json
+*.db
+.DS_Store
