@@ -8,24 +8,24 @@ from datetime import datetime
 from agents.base_agent import BaseAgent
 from llm_client import query_llm
 from email_utils import send_html_email, EMAIL_BASE_STYLE
-from database import get_db, log_agent
+from database import get_db, log_agent, HNStoryRecord
+from config import HACKER_STORIES_FETCH, HACKER_STORIES_CURATE
 
-HN_TOP_URL    = "https://hacker-news.firebaseio.com/v0/topstories.json"
-HN_ITEM_URL   = "https://hacker-news.firebaseio.com/v0/item/{}.json"
-STORIES_LIMIT = 30  # fetch top 30, summarize best
+HN_TOP_URL  = "https://hacker-news.firebaseio.com/v0/topstories.json"
+HN_ITEM_URL = "https://hacker-news.firebaseio.com/v0/item/{}.json"
 
 
 class HackerDigestAgent(BaseAgent):
     name = "hacker_digest"
 
     def _execute(self) -> dict:
-        stories = _fetch_top_stories(STORIES_LIMIT)
+        stories = _fetch_top_stories(HACKER_STORIES_FETCH)
         with get_db() as db:
             log_agent(db, self.name, "INFO", f"Fetched {len(stories)} stories from HN")
 
-        # LLM rates and summarizes each story title/url
-        curated = _curate_stories(stories)
+        curated = _curate_stories(stories, HACKER_STORIES_CURATE)
         overall = _generate_overview(curated)
+        _save_stories(curated)
 
         html = _build_email(curated, overall)
         subject = f"🔥 Hacker Digest — {datetime.now().strftime('%b %d, %Y')}"
@@ -59,10 +59,23 @@ def _fetch_top_stories(limit: int) -> list[dict]:
     return sorted(stories, key=lambda x: x["score"], reverse=True)
 
 
-def _curate_stories(stories: list[dict]) -> list[dict]:
-    """Add a one-line takeaway to each of the top 10 stories (by score)."""
+def _save_stories(stories: list[dict]):
+    with get_db() as db:
+        for s in stories:
+            existing = db.query(HNStoryRecord).filter_by(hn_id=s["id"]).first()
+            if not existing:
+                db.add(HNStoryRecord(
+                    hn_id=s["id"], title=s["title"], url=s["url"],
+                    score=s["score"], comments=s["comments"],
+                    by=s["by"], hn_url=s["hn_url"],
+                    takeaway=s.get("takeaway", ""),
+                ))
+
+
+def _curate_stories(stories: list[dict], limit: int = 10) -> list[dict]:
+    """Add a one-line takeaway to each of the top N stories (by score)."""
     import json
-    top10 = stories[:10]
+    top10 = stories[:limit]
     curated = []
     for s in top10:
         prompt = (

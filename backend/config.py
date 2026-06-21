@@ -21,8 +21,13 @@ EMAIL_RECIPIENT = os.getenv("EMAIL_RECIPIENT", EMAIL_ADDRESS)
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
 
 # ── Gmail OAuth (Mailman) ─────────────────────────────────────────────────────
-GMAIL_CREDENTIALS_FILE = os.getenv("GMAIL_CREDENTIALS_FILE", str(BASE_DIR / "gmail_credentials.json"))
-GMAIL_TOKEN_FILE       = os.getenv("GMAIL_TOKEN_FILE", str(BASE_DIR / "data" / "gmail_token.json"))
+def _resolve(path_str: str) -> str:
+    """Resolve a configured path against the project root if it's relative."""
+    p = Path(path_str)
+    return str(p if p.is_absolute() else (BASE_DIR / p))
+
+GMAIL_CREDENTIALS_FILE = _resolve(os.getenv("GMAIL_CREDENTIALS_FILE", "gmail_credentials.json"))
+GMAIL_TOKEN_FILE       = _resolve(os.getenv("GMAIL_TOKEN_FILE", "data/gmail_token.json"))
 
 # ── Database ──────────────────────────────────────────────────────────────────
 DATABASE_URL = f"sqlite:///{BASE_DIR / 'data' / 'platform.db'}"
@@ -46,3 +51,21 @@ STOCK_TICKERS = os.getenv("STOCK_TICKERS",
     "NFLX,PYPL,CRM,SHOP,SQ,COIN,PLTR,ARM,SMCI,TSM,"
     "ASML,QCOM,AVGO,MU,AMAT"
 ).split(",")
+
+# FX pairs and precious metals (yfinance symbols)
+FX_PAIRS      = ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDCAD=X", "AUDUSD=X"]
+METAL_TICKERS = ["GC=F", "SI=F"]   # Gold futures, Silver futures
+
+_FX_LABELS_MAP = {
+    "EURUSD=X": "EUR/USD", "GBPUSD=X": "GBP/USD",
+    "USDJPY=X": "USD/JPY", "USDCAD=X": "USD/CAD", "AUDUSD=X": "AUD/USD",
+}
+_METAL_LABELS_MAP = {"GC=F": "Gold (oz)", "SI=F": "Silver (oz)"}
+
+# ── Mailman key-people list ────────────────────────────────────────────────────
+KEY_PEOPLE = [e.strip() for e in
+              os.getenv("KEY_PEOPLE", "").split(",") if e.strip()]
+
+# ── Hacker Digest config ───────────────────────────────────────────────────────
+HACKER_STORIES_FETCH  = int(os.getenv("HACKER_STORIES_FETCH",  "30"))
+HACKER_STORIES_CURATE = int(os.getenv("HACKER_STORIES_CURATE", "10"))

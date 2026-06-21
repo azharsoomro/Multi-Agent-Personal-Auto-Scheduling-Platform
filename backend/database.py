@@ -95,6 +95,40 @@ class MailmanRecord(Base):
     processed_at = Column(DateTime, default=datetime.utcnow)
 
 
+class VideoRecord(Base):
+    __tablename__ = "video_records"
+    id          = Column(Integer, primary_key=True, index=True)
+    title       = Column(String(512))
+    channel     = Column(String(256))
+    url         = Column(String(512), unique=True)
+    thumbnail   = Column(String(512))
+    description = Column(Text)
+    published   = Column(String(32))
+    category    = Column(String(32))   # news | personality
+    fetched_at  = Column(DateTime, default=datetime.utcnow)
+
+
+class HNStoryRecord(Base):
+    __tablename__ = "hn_stories"
+    id         = Column(Integer, primary_key=True, index=True)
+    hn_id      = Column(Integer, unique=True, index=True)
+    title      = Column(String(512))
+    url        = Column(String(512))
+    score      = Column(Integer)
+    comments   = Column(Integer)
+    by         = Column(String(128))
+    hn_url     = Column(String(256))
+    takeaway   = Column(Text, nullable=True)
+    fetched_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MarketCommentary(Base):
+    __tablename__ = "market_commentary"
+    id          = Column(Integer, primary_key=True, index=True)
+    commentary  = Column(Text)
+    created_at  = Column(DateTime, default=datetime.utcnow)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 

@@ -24,6 +24,7 @@ AGENTS = {
 }
 
 _running_agents: set[str] = set()
+_agent_threads: dict[str, threading.Thread] = {}   # track live threads for watchdog
 _agent_lock = threading.Lock()
 _broadcast_fn: Callable | None = None    # set by main.py WebSocket handler
 _stop_event = threading.Event()
@@ -43,17 +44,21 @@ def _broadcast(event: str, data: dict):
 
 
 def get_system_metrics() -> dict:
-    cpu  = psutil.cpu_percent(interval=0.5)
+    import os
+    cpu  = psutil.cpu_percent(interval=0.3)
     ram  = psutil.virtual_memory()
-    disk = psutil.disk_usage("/")
+    _disk_path = "C:\\" if os.name == "nt" else "/"
+    disk = psutil.disk_usage(_disk_path)
+    threads = threading.active_count()
     return {
-        "cpu_pct":     cpu,
-        "ram_pct":     ram.percent,
-        "ram_used_gb": round(ram.used / 1e9, 2),
-        "ram_total_gb":round(ram.total / 1e9, 2),
-        "disk_pct":    disk.percent,
-        "disk_used_gb":round(disk.used / 1e9, 2),
+        "cpu_pct":      cpu,
+        "ram_pct":      ram.percent,
+        "ram_used_gb":  round(ram.used / 1e9, 2),
+        "ram_total_gb": round(ram.total / 1e9, 2),
+        "disk_pct":     disk.percent,
+        "disk_used_gb": round(disk.used / 1e9, 2),
         "disk_total_gb":round(disk.total / 1e9, 2),
+        "threads":      threads,
     }
 
 
@@ -104,8 +109,11 @@ def trigger_agent(agent_name: str, force: bool = False) -> dict:
         finally:
             with _agent_lock:
                 _running_agents.discard(agent_name)
+                _agent_threads.pop(agent_name, None)
 
     t = threading.Thread(target=_run, name=f"agent-{agent_name}", daemon=True)
+    with _agent_lock:
+        _agent_threads[agent_name] = t
     t.start()
     return {"status": "started", "agent": agent_name}
 
@@ -146,25 +154,57 @@ def get_orchestrator_status() -> dict:
 
 
 def _metrics_collector():
-    """Background thread: saves system metrics every 30s and broadcasts."""
-    while not _stop_event.wait(30):
+    """Background thread: broadcasts system metrics every 5s; saves to DB every 60s."""
+    _db_tick = 0
+    while not _stop_event.wait(5):
         m = get_system_metrics()
-        try:
-            with get_db() as db:
-                db.add(SystemMetric(
-                    cpu_pct=m["cpu_pct"],
-                    ram_pct=m["ram_pct"],
-                    disk_pct=m["disk_pct"],
-                    ram_used_gb=m["ram_used_gb"],
-                ))
-        except Exception:
-            pass
+        _db_tick += 1
+        if _db_tick >= 12:   # every 60s
+            _db_tick = 0
+            try:
+                with get_db() as db:
+                    db.add(SystemMetric(
+                        cpu_pct=m["cpu_pct"],
+                        ram_pct=m["ram_pct"],
+                        disk_pct=m["disk_pct"],
+                        ram_used_gb=m["ram_used_gb"],
+                    ))
+            except Exception:
+                pass
         _broadcast("metrics", m)
 
 
+def _agent_watchdog():
+    """Background thread: detects crashed agent threads and cleans up state."""
+    while not _stop_event.wait(10):
+        with _agent_lock:
+            crashed = [
+                name for name, t in list(_agent_threads.items())
+                if not t.is_alive()
+            ]
+        for name in crashed:
+            with _agent_lock:
+                _running_agents.discard(name)
+                _agent_threads.pop(name, None)
+            try:
+                with get_db() as db:
+                    from database import AgentRun
+                    run = (db.query(AgentRun)
+                           .filter_by(agent_name=name, status="running")
+                           .order_by(AgentRun.started_at.desc()).first())
+                    if run:
+                        run.status = "crashed"
+                        run.message = "Thread died unexpectedly — auto-recovered"
+                    log_agent(db, "orchestrator", "WARN",
+                              f"Agent {name} thread crashed — state recovered")
+            except Exception:
+                pass
+            _broadcast("agent_crashed", {"agent": name})
+
+
 def start_metrics_collector():
-    t = threading.Thread(target=_metrics_collector, name="metrics-collector", daemon=True)
-    t.start()
+    threading.Thread(target=_metrics_collector, name="metrics-collector", daemon=True).start()
+    threading.Thread(target=_agent_watchdog,    name="agent-watchdog",    daemon=True).start()
 
 
 def stop():

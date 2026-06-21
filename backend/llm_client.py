@@ -28,11 +28,16 @@ def query_llm(prompt: str, model: str = OLLAMA_MODEL, timeout: int = 300,
         resp = requests.post(
             f"{OLLAMA_BASE_URL}/api/chat",
             json={"model": model, "messages": messages, "stream": False,
+                  "think": False,   # disable Qwen3 chain-of-thought — keeps responses fast
                   "options": {"temperature": 0.3, "num_predict": 512}},
             timeout=timeout,
         )
         resp.raise_for_status()
-        text = resp.json()["message"]["content"].strip()
+        data = resp.json()
+        text = data["message"]["content"].strip()
+        # strip any residual <think>…</think> block if thinking leaked through
+        import re as _re
+        text = _re.sub(r"<think>.*?</think>", "", text, flags=_re.DOTALL).strip()
         elapsed = (time.time() - t0) * 1000
         with _lock:
             _stats["total"] += 1

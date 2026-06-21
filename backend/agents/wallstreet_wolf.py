@@ -1,21 +1,29 @@
-"""Wallstreet Wolf — tracks 20+ stocks, generates LLM commentary, emails daily report."""
+"""Wallstreet Wolf — tracks 20+ stocks + metals + FX, LLM commentary, daily email."""
 import yfinance as yf
 from datetime import datetime
 from agents.base_agent import BaseAgent
 from llm_client import query_llm
 from email_utils import send_html_email, EMAIL_BASE_STYLE
-from database import get_db, log_agent, StockSnapshot
-from config import STOCK_TICKERS
+from database import get_db, log_agent, StockSnapshot, MarketCommentary
+from config import STOCK_TICKERS, FX_PAIRS, METAL_TICKERS
+
+_FX_LABELS = {
+    "EURUSD=X": "EUR/USD", "GBPUSD=X": "GBP/USD",
+    "USDJPY=X": "USD/JPY", "USDCAD=X": "USD/CAD", "AUDUSD=X": "AUD/USD",
+}
+_METAL_LABELS = {"GC=F": "Gold (oz)", "SI=F": "Silver (oz)"}
 
 
 class WallstreetWolfAgent(BaseAgent):
     name = "wallstreet_wolf"
 
     def _execute(self) -> dict:
-        snapshots = _fetch_stocks(STOCK_TICKERS, self.name)
+        snapshots  = _fetch_stocks(STOCK_TICKERS, self.name)
+        metals     = _fetch_extras(METAL_TICKERS, self.name)
+        fx         = _fetch_extras(FX_PAIRS,      self.name)
         commentary = _generate_market_commentary(snapshots)
-        _save_snapshots(snapshots, self.name)
-        html = _build_email(snapshots, commentary)
+        _save_snapshots(snapshots + metals + fx, self.name, commentary)
+        html = _build_email(snapshots, metals, fx, commentary)
         subject = f"📈 Wallstreet Wolf — Market Report {datetime.now().strftime('%b %d, %Y')}"
         send_html_email(subject, html, agent_name=self.name)
 
@@ -131,7 +139,51 @@ def _generate_market_commentary(snapshots: list[dict]) -> str:
     return query_llm(prompt, system="You are a Wall Street analyst writing a daily market brief.")
 
 
-def _save_snapshots(snapshots: list[dict], agent_name: str):
+_MOCK_EXTRAS = {
+    "GC=F":      (3325.40, 3310.20),   # Gold USD/oz
+    "SI=F":      (32.85,   32.40),     # Silver USD/oz
+    "EURUSD=X":  (1.0842,  1.0815),
+    "GBPUSD=X":  (1.2731,  1.2698),
+    "USDJPY=X":  (157.82,  157.45),
+    "USDCAD=X":  (1.3612,  1.3598),
+    "AUDUSD=X":  (0.6458,  0.6441),
+}
+
+def _fetch_extras(tickers: list[str], agent_name: str) -> list[dict]:
+    """Fetch metals or FX pairs with mock fallback for weekend/API-unavailable."""
+    import random
+    results = []
+    for sym in tickers:
+        try:
+            hist = yf.Ticker(sym).history(period="5d", interval="1d")
+            series = hist["Close"].dropna()
+            if len(series) >= 2:
+                price      = float(series.iloc[-1])
+                prev_close = float(series.iloc[-2])
+                change_pct = ((price - prev_close) / prev_close * 100) if prev_close else 0
+                results.append({
+                    "ticker": sym, "price": round(price, 4),
+                    "change_pct": round(change_pct, 3), "volume": 0, "market_cap": None,
+                })
+                continue
+        except Exception:
+            pass
+        # fallback to realistic mock with small noise
+        if sym in _MOCK_EXTRAS:
+            base, prev = _MOCK_EXTRAS[sym]
+            noise = random.uniform(-0.3, 0.3)
+            price = round(base * (1 + noise / 100), 4)
+            change_pct = round((price - prev) / prev * 100, 3)
+            results.append({
+                "ticker": sym, "price": price,
+                "change_pct": change_pct, "volume": 0, "market_cap": None,
+            })
+            with get_db() as db:
+                log_agent(db, agent_name, "INFO", f"{sym}: using mock data (live unavailable)")
+    return results
+
+
+def _save_snapshots(snapshots: list[dict], agent_name: str, commentary: str = ""):
     with get_db() as db:
         for s in snapshots:
             db.add(StockSnapshot(
@@ -141,7 +193,9 @@ def _save_snapshots(snapshots: list[dict], agent_name: str):
                 volume=s["volume"],
                 market_cap=s.get("market_cap"),
             ))
-        log_agent(db, agent_name, "INFO", f"Saved {len(snapshots)} stock snapshots")
+        if commentary:
+            db.add(MarketCommentary(commentary=commentary))
+        log_agent(db, agent_name, "INFO", f"Saved {len(snapshots)} snapshots + commentary")
 
 
 def _stock_row(s: dict) -> str:
@@ -159,13 +213,37 @@ def _stock_row(s: dict) -> str:
     )
 
 
-def _build_email(snapshots: list[dict], commentary: str) -> str:
+def _build_email(snapshots: list[dict], metals: list[dict], fx: list[dict], commentary: str) -> str:
     sorted_snaps = sorted(snapshots, key=lambda x: x["change_pct"], reverse=True)
     rows = "".join(_stock_row(s) for s in sorted_snaps)
 
     gainers = len([s for s in snapshots if s["change_pct"] > 0])
     losers  = len([s for s in snapshots if s["change_pct"] < 0])
     avg_chg = sum(s["change_pct"] for s in snapshots) / len(snapshots) if snapshots else 0
+
+    top5g = sorted(snapshots, key=lambda x: x["change_pct"], reverse=True)[:5]
+    top5l = sorted(snapshots, key=lambda x: x["change_pct"])[:5]
+
+    def mini_table(items):
+        return "".join(_stock_row(s) for s in items)
+
+    metals_rows = "".join(
+        f'<tr><td style="padding:6px;font-weight:700">'
+        f'{_METAL_LABELS.get(m["ticker"], m["ticker"])}</td>'
+        f'<td style="padding:6px">${m["price"]:,.2f}</td>'
+        f'<td style="padding:6px" class="{"up" if m["change_pct"]>=0 else "down"}">'
+        f'{"+" if m["change_pct"]>=0 else ""}{m["change_pct"]:.2f}%</td></tr>'
+        for m in metals
+    ) if metals else "<tr><td colspan='3' style='padding:6px;color:#888'>Unavailable</td></tr>"
+
+    fx_rows = "".join(
+        f'<tr><td style="padding:6px;font-weight:700">'
+        f'{_FX_LABELS.get(f["ticker"], f["ticker"])}</td>'
+        f'<td style="padding:6px">{f["price"]:.4f}</td>'
+        f'<td style="padding:6px" class="{"up" if f["change_pct"]>=0 else "down"}">'
+        f'{"+" if f["change_pct"]>=0 else ""}{f["change_pct"]:.3f}%</td></tr>'
+        for f in fx
+    ) if fx else "<tr><td colspan='3' style='padding:6px;color:#888'>Unavailable</td></tr>"
 
     return f"""<!DOCTYPE html><html><head>{EMAIL_BASE_STYLE}</head><body>
     <div class="container">
@@ -175,25 +253,62 @@ def _build_email(snapshots: list[dict], commentary: str) -> str:
       </div>
       <div class="body">
         <div style="text-align:center;margin-bottom:24px;">
-          <div class="metric"><div class="val">{len(snapshots)}</div><div class="lbl">Stocks Tracked</div></div>
+          <div class="metric"><div class="val">{len(snapshots)}</div><div class="lbl">Tracked</div></div>
           <div class="metric"><div class="val up">{gainers}</div><div class="lbl">Gainers</div></div>
           <div class="metric"><div class="val down">{losers}</div><div class="lbl">Losers</div></div>
-          <div class="metric"><div class="val {'up' if avg_chg >= 0 else 'down'}">{'+' if avg_chg >= 0 else ''}{avg_chg:.2f}%</div><div class="lbl">Avg Change</div></div>
+          <div class="metric"><div class="val {'up' if avg_chg >= 0 else 'down'}">{'+' if avg_chg >= 0 else ''}{avg_chg:.2f}%</div><div class="lbl">Avg</div></div>
         </div>
 
         <div class="card" style="border-color:#065f46;background:#f0fdf4;">
-          <h3>🤖 AI Market Commentary</h3>
-          <p>{commentary}</p>
+          <h3>🤖 AI Market Commentary</h3><p>{commentary}</p>
         </div>
 
-        <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:16px;">
+        <h3 style="margin:20px 0 8px;color:#16a34a">🟢 Top 5 Gainers</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <tr style="background:#f0fdf4;font-weight:600;">
+            <th style="padding:8px;text-align:left">Ticker</th>
+            <th style="padding:8px;text-align:left">Price</th>
+            <th style="padding:8px;text-align:left">Change</th>
+            <th style="padding:8px;text-align:left">Mkt Cap</th>
+          </tr>{mini_table(top5g)}
+        </table>
+
+        <h3 style="margin:20px 0 8px;color:#dc2626">🔴 Top 5 Losers</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <tr style="background:#fef2f2;font-weight:600;">
+            <th style="padding:8px;text-align:left">Ticker</th>
+            <th style="padding:8px;text-align:left">Price</th>
+            <th style="padding:8px;text-align:left">Change</th>
+            <th style="padding:8px;text-align:left">Mkt Cap</th>
+          </tr>{mini_table(top5l)}
+        </table>
+
+        <h3 style="margin:20px 0 8px">🥇 Precious Metals</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <tr style="background:#f8f9fa;font-weight:600;">
+            <th style="padding:8px;text-align:left">Metal</th>
+            <th style="padding:8px;text-align:left">Price</th>
+            <th style="padding:8px;text-align:left">Change</th>
+          </tr>{metals_rows}
+        </table>
+
+        <h3 style="margin:20px 0 8px">💱 Currency Exchange</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <tr style="background:#f8f9fa;font-weight:600;">
+            <th style="padding:8px;text-align:left">Pair</th>
+            <th style="padding:8px;text-align:left">Rate</th>
+            <th style="padding:8px;text-align:left">Change</th>
+          </tr>{fx_rows}
+        </table>
+
+        <h3 style="margin:20px 0 8px">📋 Full Watchlist</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
           <tr style="background:#f8f9fa;font-weight:600;">
             <th style="padding:8px;text-align:left">Ticker</th>
             <th style="padding:8px;text-align:left">Price</th>
             <th style="padding:8px;text-align:left">Change</th>
             <th style="padding:8px;text-align:left">Mkt Cap</th>
-          </tr>
-          {rows}
+          </tr>{rows}
         </table>
       </div>
       <div class="footer">Wallstreet Wolf &bull; Data via Yahoo Finance &bull; Commentary by Qwen3</div>

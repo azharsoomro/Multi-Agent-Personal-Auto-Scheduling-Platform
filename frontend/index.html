@@ -3,18 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Multi-Agent Platform</title>
-<link rel="stylesheet" href="/static/style.css">
+<title>AgentOS — Multi-Agent Platform</title>
+<link rel="stylesheet" href="/static/style.css?v=6">
 </head>
 <body>
 <div id="app">
-  <!-- Sidebar -->
+
+  <!-- ═══════════ SIDEBAR ═══════════ -->
   <aside class="sidebar">
     <div class="logo">
-      <span class="logo-icon">⚡</span>
+      <div class="logo-icon">⚡</div>
       <span class="logo-text">AgentOS</span>
     </div>
+
     <nav>
+      <div class="nav-group-label">Overview</div>
       <a href="#" class="nav-link active" data-tab="dashboard">
         <span class="nav-icon">📊</span> Dashboard
       </a>
@@ -24,25 +27,36 @@
       <a href="#" class="nav-link" data-tab="scheduler">
         <span class="nav-icon">⏰</span> Scheduler
       </a>
-      <a href="#" class="nav-link" data-tab="stocks">
-        <span class="nav-icon">📈</span> Stocks
+
+      <div class="nav-group-label">Agents</div>
+      <a href="#" class="nav-link" data-tab="aitimes">
+        <span class="nav-icon">📺</span> AI-Times
       </a>
-      <a href="#" class="nav-link" data-tab="emails">
-        <span class="nav-icon">📧</span> Emails
+      <a href="#" class="nav-link" data-tab="mailman">
+        <span class="nav-icon">📬</span> Mailman
       </a>
+      <a href="#" class="nav-link" data-tab="wallstreet">
+        <span class="nav-icon">📈</span> Wallstreet
+      </a>
+      <a href="#" class="nav-link" data-tab="hacker">
+        <span class="nav-icon">🔥</span> Hacker Digest
+      </a>
+
+      <div class="nav-group-label">System</div>
       <a href="#" class="nav-link" data-tab="logs">
         <span class="nav-icon">📝</span> Logs
       </a>
     </nav>
+
     <div class="sidebar-footer">
       <div class="ollama-status" id="ollamaStatus">
         <span class="status-dot" id="ollamaDot"></span>
-        <span id="ollamaLabel">Checking Ollama...</span>
+        <span id="ollamaLabel">Checking Ollama…</span>
       </div>
     </div>
   </aside>
 
-  <!-- Main content -->
+  <!-- ═══════════ MAIN ═══════════ -->
   <main class="main">
     <header class="topbar">
       <h1 class="page-title" id="pageTitle">Dashboard</h1>
@@ -52,106 +66,376 @@
       </div>
     </header>
 
-    <!-- ── DASHBOARD TAB ── -->
+    <!-- Resource alarm banner -->
+    <div id="alarmBanner" class="alarm-banner" style="display:none"></div>
+
+    <!-- ══════════════════════════════════════
+         DASHBOARD TAB
+    ══════════════════════════════════════ -->
     <div id="tab-dashboard" class="tab-content active">
-      <div class="metrics-row">
-        <div class="metric-card">
-          <div class="metric-icon">🖥️</div>
-          <div class="metric-val" id="cpuVal">—</div>
-          <div class="metric-lbl">CPU</div>
-          <div class="metric-bar"><div class="bar-fill cpu-fill" id="cpuBar"></div></div>
+
+      <!-- ── GREETING ── -->
+      <div class="greeting-row">
+        <div>
+          <h1 class="greeting-h1">Welcome back <span class="wave">👋</span></h1>
+          <p class="greeting-sub">Monitor. Orchestrate. Optimize. Local AI operations, redefined.</p>
         </div>
-        <div class="metric-card">
-          <div class="metric-icon">💾</div>
-          <div class="metric-val" id="ramVal">—</div>
-          <div class="metric-lbl">RAM</div>
-          <div class="metric-bar"><div class="bar-fill ram-fill" id="ramBar"></div></div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-icon">💿</div>
-          <div class="metric-val" id="diskVal">—</div>
-          <div class="metric-lbl">Disk</div>
-          <div class="metric-bar"><div class="bar-fill disk-fill" id="diskBar"></div></div>
-        </div>
-        <div class="metric-card">
-          <div class="metric-icon">🧠</div>
-          <div class="metric-val" id="llmVal">—</div>
-          <div class="metric-lbl">LLM Calls</div>
-          <div class="metric-sub" id="llmAvg">avg — ms</div>
+        <div class="greeting-actions">
+          <div class="env-pill"><span class="status-dot ok" id="ollamaDot2"></span><span id="ollamaLabel2">Qwen3 · Local</span></div>
+          <button class="ghost-btn" onclick="loadDashboard()">⟳ Refresh</button>
         </div>
       </div>
 
-      <div class="grid-2">
-        <!-- Agent cards -->
-        <div class="panel">
-          <div class="panel-header">🤖 Agent Status</div>
-          <div id="agentCards" class="agent-cards"></div>
+      <!-- ── KPI CARDS ── -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-head"><span class="kpi-label">Total Agent Runs</span>
+            <span class="kpi-ic ki-cyan">🔀</span></div>
+          <div class="kpi-value" id="kpiRuns">—</div>
+          <div class="kpi-foot"><span class="kpi-delta up" id="kpiRunsDelta">—</span>
+            <span class="kpi-period">vs prev 24h</span></div>
         </div>
+        <div class="kpi-card">
+          <div class="kpi-head"><span class="kpi-label">Success Rate</span>
+            <span class="kpi-ic ki-green">✅</span></div>
+          <div class="kpi-value gv-green" id="kpiSuccess">—</div>
+          <div class="kpi-foot"><span class="kpi-delta up" id="kpiSuccessDelta">—</span>
+            <span class="kpi-period" id="kpiSuccessSub">runs succeeded</span></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-head"><span class="kpi-label">Tokens Processed</span>
+            <span class="kpi-ic ki-purple">🧠</span></div>
+          <div class="kpi-value gv-purple" id="kpiTokens">—</div>
+          <div class="kpi-foot"><span class="kpi-delta up" id="kpiLLMcalls">—</span>
+            <span class="kpi-period">LLM calls · local</span></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-head"><span class="kpi-label">Avg Response Time</span>
+            <span class="kpi-ic ki-amber">⚡</span></div>
+          <div class="kpi-value gv-amber" id="kpiResp">—</div>
+          <div class="kpi-foot"><span class="kpi-delta" id="kpiRespSub">per agent run</span></div>
+        </div>
+      </div>
 
-        <!-- Live log feed -->
+      <!-- ── OPS OVERVIEW + LIVE ACTIVITY ── -->
+      <div class="ops-grid">
+        <div class="panel ops-chart-panel">
+          <div class="panel-header">
+            AI Operations Overview
+            <span class="legend-inline">
+              <span class="lg lg-cpu">● CPU</span>
+              <span class="lg lg-ram">● Memory</span>
+              <span class="lg lg-disk">● Disk</span>
+            </span>
+          </div>
+          <canvas id="resourceChart" height="120"></canvas>
+        </div>
         <div class="panel">
-          <div class="panel-header">📡 Live Events</div>
+          <div class="panel-header">Live Activity <span class="view-all">live</span></div>
           <div id="liveFeed" class="live-feed"></div>
         </div>
       </div>
 
-      <!-- Resource chart -->
-      <div class="panel" style="margin-top:20px;">
-        <div class="panel-header">📊 Resource History (last 30 readings)</div>
-        <canvas id="resourceChart" height="80"></canvas>
+      <!-- ── TOP AGENTS + MODEL PERF + SYSTEM HEALTH ── -->
+      <div class="trio-grid">
+        <div class="panel">
+          <div class="panel-header">Top Performing Agents</div>
+          <div id="topAgents" class="top-agents"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">AI Model Performance</div>
+          <div class="donut-panel">
+            <div class="donut-wrap">
+              <svg viewBox="0 0 120 120" class="donut-svg">
+                <circle class="donut-track" cx="60" cy="60" r="50"/>
+                <circle class="donut-prog dp-green" id="modelArc" cx="60" cy="60" r="50"/>
+              </svg>
+              <div class="donut-center">
+                <div class="donut-val gv-green" id="modelVal">—</div>
+                <div class="donut-cap">Success</div>
+              </div>
+            </div>
+            <div class="donut-legend" id="modelStats"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">System Health</div>
+          <div class="donut-panel">
+            <div class="donut-wrap">
+              <svg viewBox="0 0 120 120" class="donut-svg">
+                <circle class="donut-track" cx="60" cy="60" r="50"/>
+                <circle class="donut-prog dp-cyan" id="healthArc" cx="60" cy="60" r="50"/>
+              </svg>
+              <div class="donut-center">
+                <div class="donut-val gv-cyan" id="healthVal">—</div>
+                <div class="donut-cap">Uptime</div>
+              </div>
+            </div>
+            <div class="donut-legend" id="healthList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── COST OPTIMIZATION + INFRA GAUGES ── -->
+      <div class="cost-grid">
+        <div class="panel cost-panel">
+          <div class="panel-header">Cost Optimization <span class="view-all">vs cloud LLM</span></div>
+          <div class="cost-body">
+            <div class="cost-main">
+              <div class="cost-label">Cloud Cost Avoided</div>
+              <div class="cost-value" id="costVal">$0</div>
+              <div class="cost-sub" id="costSub">100% on-premise inference · $0 cloud spend</div>
+            </div>
+            <div class="cost-bars">
+              <div class="cost-bar-row">
+                <span class="cbr-label">Cloud LLM (GPT-4 class)</span>
+                <div class="cbr-track"><div class="cbr-fill cbr-red" style="width:100%"></div></div>
+                <span class="cbr-val" id="cloudCost">$—</span>
+              </div>
+              <div class="cost-bar-row">
+                <span class="cbr-label">AgentOS (local Qwen3)</span>
+                <div class="cbr-track"><div class="cbr-fill cbr-green" style="width:2%"></div></div>
+                <span class="cbr-val gv-green">$0.00</span>
+              </div>
+              <div class="cost-foot">
+                <div><div class="cf-num gv-purple" id="cfTokens">—</div><div class="cf-lbl">Tokens (local)</div></div>
+                <div><div class="cf-num gv-cyan" id="cfEmails">—</div><div class="cf-lbl">Emails Auto-Sorted</div></div>
+                <div><div class="cf-num gv-amber" id="cfData">—</div><div class="cf-lbl">Data Points</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel infra-panel">
+          <div class="panel-header">Infrastructure</div>
+          <div class="infra-gauges">
+            <div class="mini-gauge">
+              <svg viewBox="0 0 90 90" class="mini-svg">
+                <circle class="mini-track" cx="45" cy="45" r="38"/>
+                <circle class="mini-prog mp-cpu" id="cpuArc" cx="45" cy="45" r="38"/>
+              </svg>
+              <div class="mini-center"><div class="mini-val gv-indigo" id="cpuVal">—</div></div>
+              <div class="mini-cap">CPU</div>
+            </div>
+            <div class="mini-gauge">
+              <svg viewBox="0 0 90 90" class="mini-svg">
+                <circle class="mini-track" cx="45" cy="45" r="38"/>
+                <circle class="mini-prog mp-ram" id="ramArc" cx="45" cy="45" r="38"/>
+              </svg>
+              <div class="mini-center"><div class="mini-val gv-cyan" id="ramVal">—</div></div>
+              <div class="mini-cap">RAM</div>
+            </div>
+            <div class="mini-gauge">
+              <svg viewBox="0 0 90 90" class="mini-svg">
+                <circle class="mini-track" cx="45" cy="45" r="38"/>
+                <circle class="mini-prog mp-disk" id="diskArc" cx="45" cy="45" r="38"/>
+              </svg>
+              <div class="mini-center"><div class="mini-val gv-orange" id="diskVal">—</div></div>
+              <div class="mini-cap">Disk</div>
+            </div>
+          </div>
+          <div class="infra-foot">
+            <span><span class="dot-em"></span><span id="threadsVal">—</span> threads</span>
+            <span id="llmAvg">avg — ms</span>
+          </div>
+          <!-- hidden els kept for JS compatibility -->
+          <span id="llmVal" style="display:none"></span>
+          <span id="llmCallsFoot" style="display:none"></span>
+          <canvas id="llmSpark" style="display:none"></canvas>
+        </div>
       </div>
     </div>
 
-    <!-- ── AGENTS TAB ── -->
+    <!-- ══════════════════════════════════════
+         AGENTS TAB
+    ══════════════════════════════════════ -->
     <div id="tab-agents" class="tab-content">
+      <div class="tab-kpis">
+        <div class="tk-card"><div class="tk-ic ki-cyan">🤖</div><div><div class="tk-val gv-cyan" id="agTotal">4</div><div class="tk-lbl">Total Agents</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-green">🟢</div><div><div class="tk-val gv-green" id="agActive">—</div><div class="tk-lbl">Running Now</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-purple">📊</div><div><div class="tk-val gv-purple" id="agRuns">—</div><div class="tk-lbl">Total Runs</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-amber">✅</div><div><div class="tk-val gv-amber" id="agSuccess">—</div><div class="tk-lbl">Success Rate</div></div></div>
+      </div>
       <div class="agent-grid" id="agentDetailCards"></div>
     </div>
 
-    <!-- ── SCHEDULER TAB ── -->
+    <!-- ══════════════════════════════════════
+         SCHEDULER TAB
+    ══════════════════════════════════════ -->
     <div id="tab-scheduler" class="tab-content">
+      <div class="tab-kpis">
+        <div class="tk-card"><div class="tk-ic ki-cyan">⏰</div><div><div class="tk-val gv-cyan" id="schJobs">—</div><div class="tk-lbl">Active Schedules</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-green">⏭️</div><div><div class="tk-val gv-green" id="schNext" style="font-size:18px">—</div><div class="tk-lbl">Next Run</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-purple">🔁</div><div><div class="tk-val gv-purple" id="schAgent" style="font-size:18px">—</div><div class="tk-lbl">Next Agent</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-amber">🕒</div><div><div class="tk-val gv-amber" style="font-size:18px">UTC</div><div class="tk-lbl">Timezone</div></div></div>
+      </div>
       <div class="panel">
         <div class="panel-header">⏰ Scheduled Jobs</div>
         <table class="data-table" id="schedulerTable">
           <thead>
-            <tr><th>Agent</th><th>Next Run (UTC)</th><th>Trigger</th><th>Update Cron</th></tr>
+            <tr>
+              <th>Agent</th><th>Next Run (UTC)</th>
+              <th>Trigger Expression</th><th>Update Schedule</th>
+            </tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
     </div>
 
-    <!-- ── STOCKS TAB ── -->
-    <div id="tab-stocks" class="tab-content">
+    <!-- ══════════════════════════════════════
+         AI-TIMES TAB
+    ══════════════════════════════════════ -->
+    <div id="tab-aitimes" class="tab-content">
+      <div class="tab-toolbar">
+        <button class="btn-refresh"    onclick="loadAITimes()">🔄 Refresh</button>
+        <button class="btn-run-agent"  onclick="triggerAgent('ai_times',true)">▶ Run Agent Now</button>
+      </div>
+      <div class="tab-kpis">
+        <div class="tk-card"><div class="tk-ic ki-cyan">📺</div><div><div class="tk-val gv-cyan" id="aitTotal">—</div><div class="tk-lbl">Total Videos</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-blue">📰</div><div><div class="tk-val gv-indigo" id="aitNews">—</div><div class="tk-lbl">News Videos</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-purple">🎙️</div><div><div class="tk-val gv-purple" id="aitPers">—</div><div class="tk-lbl">Creator Picks</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-green">🕐</div><div><div class="tk-val gv-green" id="aitUpdated" style="font-size:18px">—</div><div class="tk-lbl">Last Updated</div></div></div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header" style="border-left:3px solid #3b82f6">
+            📰 AI News <span style="margin-left:6px;font-size:10px;font-weight:400;color:var(--muted)">5 videos · last 24-48h</span>
+          </div>
+          <div id="newsVideos" class="video-list"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header" style="border-left:3px solid #8b5cf6">
+            🎙️ Creator Highlights <span style="margin-left:6px;font-size:10px;font-weight:400;color:var(--muted)">5 videos</span>
+          </div>
+          <div id="persVideos" class="video-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════
+         MAILMAN TAB
+    ══════════════════════════════════════ -->
+    <div id="tab-mailman" class="tab-content">
+      <div class="tab-toolbar">
+        <button class="btn-refresh"   onclick="loadMailman()">🔄 Refresh</button>
+        <button class="btn-run-agent" onclick="triggerAgent('mailman',true)">📥 Scan Inbox Now</button>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <label style="font-size:11.5px;color:var(--muted2)">Key people:</label>
+          <input id="keyPeopleInput" class="config-input" placeholder="boss@co.com, cto@co.com">
+          <button class="btn-sm" onclick="saveKeyPeople()">Save</button>
+        </div>
+      </div>
+      <div class="tab-kpis">
+        <div class="tk-card"><div class="tk-ic ki-cyan">📧</div><div><div class="tk-val gv-cyan" id="mmTotal">—</div><div class="tk-lbl">Emails Classified</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-red">🚨</div><div><div class="tk-val gv-pink" id="mmUrgent">—</div><div class="tk-lbl">Urgent</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-purple">🏷️</div><div><div class="tk-val gv-purple" id="mmCats">—</div><div class="tk-lbl">Categories</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-green">📬</div><div><div class="tk-val gv-green" id="mmConn" style="font-size:18px">Live</div><div class="tk-lbl">Gmail Status</div></div></div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-header">📊 Category Breakdown</div>
+          <div id="mailmanStats" class="mailman-stats"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">📋 Classified Emails</div>
+          <div id="mailmanList" class="mailman-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════
+         WALLSTREET TAB
+    ══════════════════════════════════════ -->
+    <div id="tab-wallstreet" class="tab-content">
+      <div class="tab-toolbar">
+        <button class="btn-refresh"   onclick="loadWallstreet()">🔄 Refresh</button>
+        <button class="btn-run-agent" onclick="triggerAgent('wallstreet_wolf',true)">📈 Run Agent Now</button>
+      </div>
+      <div class="tab-kpis">
+        <div class="tk-card"><div class="tk-ic ki-cyan">📊</div><div><div class="tk-val gv-cyan" id="wsTracked">—</div><div class="tk-lbl">Stocks Tracked</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-green">🟢</div><div><div class="tk-val gv-green" id="wsGainers">—</div><div class="tk-lbl">Gainers</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-red">🔴</div><div><div class="tk-val gv-pink" id="wsLosers">—</div><div class="tk-lbl">Losers</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-amber">📈</div><div><div class="tk-val gv-amber" id="wsAvg">—</div><div class="tk-lbl">Avg Change</div></div></div>
+      </div>
+
+      <div id="wsCommentary" class="commentary-card" style="display:none;margin-bottom:16px"></div>
+
+      <div class="grid-3" style="margin-bottom:16px">
+        <div class="panel">
+          <div class="panel-header gainer-hdr">🟢 Top 5 Gainers</div>
+          <table class="data-table" id="gainersTable">
+            <thead><tr><th>Ticker</th><th>Price</th><th>Change</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <div class="panel-header loser-hdr">🔴 Top 5 Losers</div>
+          <table class="data-table" id="losersTable">
+            <thead><tr><th>Ticker</th><th>Price</th><th>Change</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <div class="panel-header">🥇 Metals &amp; 💱 FX</div>
+          <div id="metalsSection"></div>
+        </div>
+      </div>
+
       <div class="panel">
-        <div class="panel-header">📈 Latest Stock Snapshots</div>
-        <table class="data-table" id="stocksTable">
+        <div class="panel-header">📋 Full Watchlist — 25 Stocks</div>
+        <table class="data-table" id="watchlistTable">
           <thead>
-            <tr><th>Ticker</th><th>Price</th><th>Change %</th><th>Captured</th></tr>
+            <tr><th>Ticker</th><th>Price</th><th>Change %</th><th>Market Cap</th><th>Captured</th></tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
     </div>
 
-    <!-- ── EMAILS TAB ── -->
-    <div id="tab-emails" class="tab-content">
-      <div class="panel">
-        <div class="panel-header">📧 Sent Emails</div>
-        <table class="data-table" id="emailsTable">
-          <thead>
-            <tr><th>Agent</th><th>Subject</th><th>Recipient</th><th>Sent At</th><th>Status</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+    <!-- ══════════════════════════════════════
+         HACKER DIGEST TAB
+    ══════════════════════════════════════ -->
+    <div id="tab-hacker" class="tab-content">
+      <div class="tab-toolbar">
+        <button class="btn-refresh"   onclick="loadHacker()">🔄 Refresh</button>
+        <button class="btn-run-agent" onclick="triggerAgent('hacker_digest',true)">🔥 Run Agent Now</button>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <label style="font-size:11.5px;color:var(--muted2)">Fetch top</label>
+          <input id="hdFetch"  class="config-input" style="width:65px" placeholder="30">
+          <label style="font-size:11.5px;color:var(--muted2)">Curate</label>
+          <input id="hdCurate" class="config-input" style="width:65px" placeholder="10">
+          <button class="btn-sm" onclick="saveHDConfig()">Save</button>
+        </div>
       </div>
+      <div class="tab-kpis">
+        <div class="tk-card"><div class="tk-ic ki-amber">🔥</div><div><div class="tk-val gv-amber" id="hdCount">—</div><div class="tk-lbl">Stories Curated</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-green">▲</div><div><div class="tk-val gv-green" id="hdTopScore">—</div><div class="tk-lbl">Top Score</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-cyan">💬</div><div><div class="tk-val gv-cyan" id="hdComments">—</div><div class="tk-lbl">Total Comments</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-purple">🤖</div><div><div class="tk-val gv-purple" id="hdAI" style="font-size:18px">Qwen3</div><div class="tk-lbl">Curated By</div></div></div>
+      </div>
+      <div id="hackerStories" class="hn-grid"></div>
     </div>
 
-    <!-- ── LOGS TAB ── -->
+    <!-- ══════════════════════════════════════
+         LOGS TAB
+    ══════════════════════════════════════ -->
     <div id="tab-logs" class="tab-content">
+      <div class="tab-kpis">
+        <div class="tk-card"><div class="tk-ic ki-cyan">📝</div><div><div class="tk-val gv-cyan" id="logTotal">—</div><div class="tk-lbl">Log Entries</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-green">ℹ️</div><div><div class="tk-val gv-green" id="logInfo">—</div><div class="tk-lbl">Info</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-amber">⚠️</div><div><div class="tk-val gv-amber" id="logWarn">—</div><div class="tk-lbl">Warnings</div></div></div>
+        <div class="tk-card"><div class="tk-ic ki-red">⛔</div><div><div class="tk-val gv-pink" id="logErr">—</div><div class="tk-lbl">Errors</div></div></div>
+      </div>
       <div class="panel">
         <div class="panel-header">
           📝 Agent Logs
-          <select id="logAgentFilter" style="float:right;padding:4px 8px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#94a3b8;">
+          <select id="logAgentFilter"
+            style="margin-left:auto;padding:4px 8px;border-radius:6px;
+                   border:1px solid var(--border);background:var(--bg2);
+                   color:var(--muted2);font-size:11.5px">
             <option value="">All Agents</option>
             <option value="ai_times">AI-Times</option>
             <option value="mailman">Mailman</option>
@@ -164,9 +448,10 @@
         <div id="logsContainer" class="logs-container"></div>
       </div>
     </div>
+
   </main>
 </div>
 
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=6"></script>
 </body>
 </html>

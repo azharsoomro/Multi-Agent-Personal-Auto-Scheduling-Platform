@@ -12,14 +12,39 @@ from agents.base_agent import BaseAgent
 from llm_client import query_llm
 from email_utils import send_html_email, EMAIL_BASE_STYLE
 from database import get_db, log_agent, MailmanRecord
-from config import GMAIL_CREDENTIALS_FILE, GMAIL_TOKEN_FILE, EMAIL_RECIPIENT
+from config import GMAIL_CREDENTIALS_FILE, GMAIL_TOKEN_FILE, EMAIL_RECIPIENT, KEY_PEOPLE
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.labels",
 ]
 
-CATEGORIES = ["urgent", "newsletter", "work", "social", "spam", "finance", "personal", "other"]
+# Spec-required categories
+CATEGORIES = [
+    "urgent", "action_required", "follow_up",
+    "newsletter", "notification", "personal", "other"
+]
+
+
+def _normalize_category(raw: str) -> str:
+    """Map any LLM category output to a canonical snake_case key."""
+    key = (raw or "other").lower().strip().replace(" ", "_").replace("-", "_")
+    valid = {
+        "urgent", "action_required", "follow_up",
+        "newsletter", "notification", "personal", "other",
+    }
+    # common aliases the LLM may emit
+    aliases = {
+        "action": "action_required", "actionrequired": "action_required",
+        "followup": "follow_up", "follow": "follow_up",
+        "promotion": "newsletter", "promotions": "newsletter",
+        "marketing": "newsletter", "social": "notification",
+        "alert": "notification", "spam": "other", "finance": "action_required",
+        "work": "action_required",
+    }
+    if key in valid:
+        return key
+    return aliases.get(key, "other")
 
 
 class MailmanAgent(BaseAgent):
@@ -32,21 +57,32 @@ class MailmanAgent(BaseAgent):
         service = _get_gmail_service()
         messages = _fetch_unread(service, max_results=20)
 
-        processed, urgent = 0, []
+        with get_db() as db:
+            log_agent(db, self.name, "INFO",
+                      f"Connected to Gmail — found {len(messages)} unread message(s)")
+
+        if not messages:
+            return {"summary": "Inbox scanned — no unread emails to classify",
+                    "processed": 0, "urgent": 0, "key_people": 0}
+
+        processed, urgent, key_people_hits = 0, [], []
         for msg in messages:
             record = _process_message(service, msg, self.name)
             if record:
                 processed += 1
-                if record.priority == "high":
+                if record.category == "urgent" or record.priority == "high":
                     urgent.append(record)
+                if KEY_PEOPLE and any(kp.lower() in record.sender.lower() for kp in KEY_PEOPLE):
+                    key_people_hits.append(record)
 
-        if urgent:
-            _send_alert(urgent)
+        if urgent or key_people_hits:
+            _send_alert(urgent, key_people_hits)
 
         return {
             "summary": f"Processed {processed} emails, {len(urgent)} urgent",
             "processed": processed,
             "urgent": len(urgent),
+            "key_people": len(key_people_hits),
         }
 
 
@@ -101,8 +137,9 @@ def _process_message(service, msg: dict, agent_name: str) -> "MailmanRecord | No
     sender  = headers.get("From", "unknown")
     body    = _get_message_text(full["payload"])[:1000]
 
+    cats_display = "Urgent, Action Required, Follow-Up, Newsletter, Notification, Personal, Other"
     prompt = f"""Classify this email strictly as JSON with keys: category, priority, summary.
-category must be one of: {', '.join(CATEGORIES)}
+category must be one of: {cats_display}
 priority must be one of: high, medium, low
 summary: one sentence max 20 words.
 
@@ -110,14 +147,13 @@ Subject: {subject}
 From: {sender}
 Body preview: {body[:500]}
 
-Respond ONLY with valid JSON."""
+Respond ONLY with valid JSON, no markdown."""
 
     try:
-        raw = query_llm(prompt, system="You are an email classifier. Output only JSON.")
-        # strip markdown code fences if present
+        raw = query_llm(prompt, system="You are an email classifier. Output only valid JSON, no markdown.")
         raw = raw.strip().strip("```json").strip("```").strip()
         data = json.loads(raw)
-        category = data.get("category", "other")
+        category = _normalize_category(data.get("category", "other"))
         priority = data.get("priority", "low")
         summary  = data.get("summary", "")
     except Exception:
@@ -131,7 +167,7 @@ Respond ONLY with valid JSON."""
     service.users().messages().modify(userId="me", id=msg["id"], body=body_req).execute()
 
     with get_db() as db:
-        record = MailmanRecord(
+        db.add(MailmanRecord(
             gmail_msg_id=msg["id"],
             subject=subject,
             sender=sender,
@@ -140,10 +176,16 @@ Respond ONLY with valid JSON."""
             llm_summary=summary,
             starred=(priority == "high"),
             labeled=True,
-        )
-        db.add(record)
+        ))
         log_agent(db, agent_name, "INFO", f"Classified: {subject[:60]} → {category}/{priority}")
-    return record
+
+    # Return a detached, plain object (not bound to any session) so the caller
+    # can safely read these fields after the DB session has closed.
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        subject=subject, sender=sender, category=category,
+        priority=priority, llm_summary=summary,
+    )
 
 
 _label_cache: dict[str, str] = {}
@@ -165,7 +207,7 @@ def _ensure_label(service, name: str) -> str:
     return created["id"]
 
 
-def _send_alert(records: list) -> None:
+def _send_alert(records: list, key_people: list = None) -> None:
     rows = "".join(
         f'<tr><td style="padding:8px;border-bottom:1px solid #eee">{r.subject[:60]}</td>'
         f'<td style="padding:8px;border-bottom:1px solid #eee">{r.sender[:40]}</td>'
@@ -173,11 +215,30 @@ def _send_alert(records: list) -> None:
         f'<td style="padding:8px;border-bottom:1px solid #eee">{r.llm_summary or ""}</td></tr>'
         for r in records
     )
+    kp_section = ""
+    if key_people:
+        kp_rows = "".join(
+            f'<tr><td style="padding:8px;border-bottom:1px solid #eee;color:#7f1d1d;font-weight:600">'
+            f'⭐ {r.subject[:60]}</td>'
+            f'<td style="padding:8px;border-bottom:1px solid #eee">{r.sender[:40]}</td>'
+            f'<td style="padding:8px;border-bottom:1px solid #eee">{r.llm_summary or ""}</td></tr>'
+            for r in key_people
+        )
+        kp_section = f"""
+        <h3 style="color:#7f1d1d;margin:20px 0 8px">⭐ Key-People Emails ({len(key_people)})</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <tr style="background:#fff7ed;font-weight:600;">
+            <th style="padding:8px;text-align:left">Subject</th>
+            <th style="padding:8px;text-align:left">From</th>
+            <th style="padding:8px;text-align:left">Summary</th>
+          </tr>{kp_rows}
+        </table>"""
+
     html = f"""<!DOCTYPE html><html><head>{EMAIL_BASE_STYLE}</head><body>
     <div class="container">
       <div class="header" style="background:linear-gradient(135deg,#7f1d1d,#991b1b);">
-        <h1>🚨 Mailman — Urgent Email Alert</h1>
-        <div class="sub">{len(records)} high-priority emails need attention</div>
+        <h1>🚨 Mailman — Priority Alert</h1>
+        <div class="sub">{len(records)} urgent + {len(key_people or [])} key-people emails</div>
       </div>
       <div class="body">
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -188,38 +249,108 @@ def _send_alert(records: list) -> None:
             <th style="padding:8px;text-align:left">Summary</th>
           </tr>{rows}
         </table>
+        {kp_section}
       </div>
       <div class="footer">Mailman Agent &bull; Multi-Agent Platform</div>
     </div></body></html>"""
-    send_html_email("🚨 Urgent Emails Detected", html, agent_name="mailman")
+    send_html_email("🚨 Priority Emails Detected", html, agent_name="mailman")
+
+
+_DEMO_INBOX = [
+    {"subject": "🚨 URGENT: Production database is down",
+     "sender": "ops-alerts@company.com",
+     "body": "PagerDuty alert: the primary production database is unreachable. "
+             "All customer-facing services are returning 500 errors. Immediate action required."},
+    {"subject": "Action needed: Approve Q3 budget by EOD Friday",
+     "sender": "finance@company.com",
+     "body": "Please review and approve the attached Q3 budget proposal. "
+             "We need your sign-off before the board meeting on Monday."},
+    {"subject": "Re: Following up on our partnership discussion",
+     "sender": "sarah.chen@partnerco.com",
+     "body": "Hi, just circling back on the integration proposal we discussed last week. "
+             "Did you get a chance to review the API docs I sent over?"},
+    {"subject": "Your weekly AI digest — 12 new papers",
+     "sender": "newsletter@aiweekly.com",
+     "body": "This week in AI: new open-weight models, agentic frameworks, and a viral "
+             "paper on speculative decoding. Read the full roundup inside."},
+    {"subject": "Your package has shipped 📦",
+     "sender": "no-reply@shipping.com",
+     "body": "Order #88231 has shipped and will arrive Thursday. Track your package here."},
+    {"subject": "Lunch this weekend?",
+     "sender": "mike.j@gmail.com",
+     "body": "Hey! It's been a while. Want to grab lunch on Saturday and catch up? "
+             "Let me know what works for you."},
+    {"subject": "Invoice #4521 — payment due in 3 days",
+     "sender": "billing@vendor.com",
+     "body": "Your invoice of $1,200 is due on the 18th. Please process the payment "
+             "to avoid a late fee. Payment portal link enclosed."},
+    {"subject": "LinkedIn: You appeared in 9 searches this week",
+     "sender": "notifications@linkedin.com",
+     "body": "Your profile is getting noticed. See who's been searching for people like you."},
+]
 
 
 def _demo_mode(agent_name: str) -> dict:
-    """Run without Gmail credentials — classify mock emails."""
-    mock_emails = [
-        {"subject": "URGENT: Server Down in Production", "sender": "ops@company.com",
-         "body": "The production database is unreachable. All services are impacted."},
-        {"subject": "Weekly Newsletter — AI Trends", "sender": "newsletter@aiweekly.com",
-         "body": "This week in AI: new models, papers, and tools you should know about."},
-        {"subject": "Invoice #4521 Due", "sender": "billing@vendor.com",
-         "body": "Your invoice of $1,200 is due in 3 days. Please process payment."},
-    ]
+    """Run without Gmail credentials — classify a realistic mock inbox and SAVE records."""
+    import hashlib
+    from datetime import datetime
 
-    results = []
-    for email in mock_emails:
-        prompt = (f"Classify email. Subject: {email['subject']}. "
-                  f"From: {email['sender']}. Body: {email['body']}. "
-                  f"Return JSON with category ({', '.join(CATEGORIES)}), "
-                  f"priority (high/medium/low), summary (1 sentence).")
+    processed, urgent, by_cat = 0, [], {}
+
+    for email in _DEMO_INBOX:
+        prompt = (f"Classify this email strictly as JSON with keys: category, priority, summary.\n"
+                  f"category must be one of: Urgent, Action Required, Follow-Up, Newsletter, "
+                  f"Notification, Personal, Other\n"
+                  f"priority must be one of: high, medium, low\n"
+                  f"summary: one sentence, max 18 words.\n\n"
+                  f"Subject: {email['subject']}\n"
+                  f"From: {email['sender']}\n"
+                  f"Body: {email['body']}\n\n"
+                  f"Respond ONLY with valid JSON, no markdown.")
         try:
-            raw = query_llm(prompt, system="Output only valid JSON.")
+            raw = query_llm(prompt, system="You are an email classifier. Output only valid JSON.")
             raw = raw.strip().strip("```json").strip("```").strip()
             data = json.loads(raw)
+            category = _normalize_category(data.get("category", "other"))
+            priority = (data.get("priority", "low") or "low").lower()
+            summary  = data.get("summary", "")
         except Exception:
-            data = {"category": "other", "priority": "low", "summary": ""}
-        results.append({**email, **data})
-        with get_db() as db:
-            log_agent(db, agent_name, "INFO",
-                      f"[DEMO] {email['subject'][:50]} → {data.get('category')}/{data.get('priority')}")
+            category, priority, summary = "other", "low", ""
 
-    return {"summary": f"Demo mode: classified {len(results)} mock emails", "results": results}
+        # Stable synthetic message id (so re-runs upsert instead of duplicating)
+        msg_id = "demo-" + hashlib.md5(email["subject"].encode()).hexdigest()[:16]
+
+        with get_db() as db:
+            existing = db.query(MailmanRecord).filter_by(gmail_msg_id=msg_id).first()
+            if existing:
+                existing.category    = category
+                existing.priority    = priority
+                existing.llm_summary = summary
+                existing.starred     = (priority == "high")
+                existing.processed_at = datetime.utcnow()
+            else:
+                db.add(MailmanRecord(
+                    gmail_msg_id=msg_id,
+                    subject=email["subject"],
+                    sender=email["sender"],
+                    category=category,
+                    priority=priority,
+                    llm_summary=summary,
+                    starred=(priority == "high"),
+                    labeled=True,
+                ))
+            log_agent(db, agent_name, "INFO",
+                      f"[DEMO] {email['subject'][:45]} → {category}/{priority}")
+
+        processed += 1
+        by_cat[category] = by_cat.get(category, 0) + 1
+        if category == "urgent" or priority == "high":
+            urgent.append(email["subject"])
+
+    return {
+        "summary": f"Classified {processed} emails — {len(urgent)} urgent · "
+                   f"{len(by_cat)} categories",
+        "processed": processed,
+        "urgent": len(urgent),
+        "by_category": by_cat,
+    }

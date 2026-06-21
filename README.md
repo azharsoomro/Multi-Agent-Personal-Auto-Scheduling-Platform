@@ -1,61 +1,106 @@
-# ⚡ Multi-Agent Auto-Scheduling Platform
+# ⚡ AgentOS Command Center
+### Multi-Agent Auto-Scheduling Platform — powered by a local LLM
 
-A fully local multi-agent system orchestrated by a central manager, running on **Ollama + Qwen3**. Five specialized agents handle real tasks autonomously on a cron schedule, with a live web dashboard.
+A fully operational, **100% local** multi-agent AI platform. A central orchestrator manages four specialized autonomous agents, monitors system resources, schedules work, and serves a real-time operations dashboard. **Every bit of AI inference runs on your own machine** via **Qwen3 on Ollama** — no cloud APIs, no per-token billing, no data leaving your network.
 
----
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Main Orchestrator                             │
-│  • Resource monitor (CPU/RAM/Disk)   • LLM semaphore queue      │
-│  • Agent lifecycle management        • Deadlock prevention       │
-│  • WebSocket broadcast               • APScheduler integration   │
-└──────────┬──────────────────────────────────────────────────────┘
-           │  spawns & monitors
-    ┌──────┴──────┬──────────────┬──────────────┬────────────────┐
-    ▼             ▼              ▼               ▼                ▼
-┌────────┐  ┌─────────┐  ┌──────────────┐  ┌──────────┐  ┌──────────────┐
-│AI-Times│  │ Mailman │  │Wallstreet    │  │ Hacker   │  │  Orchestrator│
-│        │  │         │  │Wolf          │  │ Digest   │  │  (self)      │
-│YouTube │  │ Gmail   │  │Yahoo Finance │  │ HN API   │  │              │
-│→ email │  │ OAuth   │  │→ 25 stocks   │  │→ email   │  │              │
-│digest  │  │ LLM     │  │→ LLM comment │  │ digest   │  │              │
-│        │  │ labels  │  │→ email       │  │          │  │              │
-└────────┘  └─────────┘  └──────────────┘  └──────────┘  └──────────────┘
-                                │
-                         ┌──────┴──────┐
-                         │   Ollama    │
-                         │  Qwen3:LLM  │
-                         └─────────────┘
-```
-
-**Storage:** SQLite (`data/platform.db`) — agent runs, logs, stock snapshots, email records, system metrics  
-**Frontend:** Plain HTML/CSS/JS — WebSocket real-time updates, no build step  
-**Backend:** FastAPI + APScheduler + SQLAlchemy
+![Architecture](architecture.png)
 
 ---
 
-## 🚀 Quick Start
+## 📑 Table of Contents
+- [What It Does](#-what-it-does)
+- [Architecture](#-architecture)
+- [Tech Stack](#-tech-stack)
+- [Quick Start](#-quick-start-from-scratch)
+- [Configuration](#-configuration)
+- [The Agents](#-the-agents)
+- [Dashboard](#-dashboard)
+- [Key Design Decisions](#-key-design-decisions)
+- [Project Structure](#-project-structure)
+- [Security](#-security)
+
+---
+
+## 🎯 What It Does
+
+Knowledge workers lose **2–3 hours every day** to email triage, market-watching, and news-scanning. AgentOS automates that work with a team of tireless AI agents that run 24/7 in the background — while keeping all data and inference **on-premise**:
+
+| Layer | Responsibility |
+|---|---|
+| **Main Orchestrator** | Manages all agents; monitors CPU/RAM/Disk/threads every 5s; LLM scheduling with deadlock prevention; crash detection & recovery; serves the dashboard |
+| **Agent‑1: AI‑Times** | Fetches 5 AI‑news + 5 creator YouTube videos; sends a daily HTML email digest |
+| **Agent‑2: Mailman** | Monitors Gmail via OAuth 2.0; classifies every email with the LLM; labels, stars, and alerts on key people; sends summaries |
+| **Agent‑3: Wallstreet Wolf** | Tracks 25 stocks + gold/silver + FX via Yahoo Finance; top gainers/losers; LLM market commentary; daily email |
+| **Agent‑4: Hacker Digest** | Curates top Hacker News stories with LLM "why it matters" takeaways; configurable; daily email |
+
+---
+
+## 🏗 Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│           Web Dashboard  (http://localhost:8000)              │
+│  Dashboard · Agents · Scheduler · AI-Times · Mailman          │
+│  Wallstreet · Hacker Digest · Logs                            │
+└───────────────────────┬──────────────────────────────────────┘
+                        │ FastAPI REST + WebSocket (5-second push)
+┌───────────────────────▼──────────────────────────────────────┐
+│                    Main Orchestrator                          │
+│  • CPU / RAM / Disk / Thread monitoring (every 5s)            │
+│  • On-screen alarm + corrective action when > 90%             │
+│  • LLM semaphore — one Qwen3 call at a time, no deadlocks      │
+│  • Agent watchdog — detects crashes, auto-recovers state       │
+│  • APScheduler cron — editable live from the dashboard         │
+└──────┬──────────────┬──────────────┬─────────────────────────┘
+       │              │              │              │
+┌──────▼─────┐ ┌──────▼─────┐ ┌──────▼──────┐ ┌─────▼──────────┐
+│  AI-Times  │ │  Mailman   │ │ Wallstreet  │ │ Hacker Digest  │
+│  Agent-1   │ │  Agent-2   │ │ Wolf Agt-3  │ │   Agent-4      │
+│ YouTube    │ │ Gmail      │ │ Yahoo       │ │ Hacker News    │
+│ Data API   │ │ OAuth 2.0  │ │ Finance     │ │ Firebase API   │
+└──────┬─────┘ └──────┬─────┘ └──────┬──────┘ └─────┬──────────┘
+       │              │              │              │
+       └──────────────┴──────┬───────┴──────────────┘
+                             │
+          ┌──────────────────▼─────────────────────┐
+          │  Ollama — Qwen3 8B (local inference)    │
+          │  SQLite — platform.db (WAL mode)        │
+          └─────────────────────────────────────────┘
+```
+
+> A full-resolution diagram is in **[`architecture.png`](architecture.png)** (source: `architecture.svg`).
+
+---
+
+## 🧱 Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Local LLM | **Ollama + Qwen3 8B** (Q4_K_M, ~5.2 GB) — all inference local |
+| Backend | **Python 3.12+** · FastAPI · Uvicorn |
+| Scheduling | APScheduler (cron triggers) |
+| Storage | **SQLite** (WAL mode) via SQLAlchemy |
+| Realtime | WebSocket (5-second metric push) |
+| Frontend | Plain **HTML / CSS / JavaScript** — no build step |
+| External APIs | YouTube Data API v3 · Gmail API (OAuth 2.0) · Yahoo Finance · Hacker News |
+
+---
+
+## 🚀 Quick Start (from scratch)
 
 ### 1. Prerequisites
+- **Python 3.12+** — [python.org](https://python.org)
+- **Ollama** — [ollama.com](https://ollama.com)
 
-- Python 3.12+
-- [Ollama](https://ollama.com/) installed and running
-- Qwen3 model pulled
-
+### 2. Pull the local model
 ```bash
-# Install Ollama (Windows — download from ollama.com)
-# Then pull the model:
 ollama pull qwen3:latest
 ```
 
-### 2. Clone & Install
-
+### 3. Clone & install
 ```bash
-git clone https://github.com/YOUR_USERNAME/multi-agent-platform.git
-cd multi-agent-platform
+git clone https://github.com/YOUR_USERNAME/agentos-command-center.git
+cd agentos-command-center
 
 python -m venv .venv
 # Windows:
@@ -66,148 +111,135 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Configure
-
+### 4. Configure
 ```bash
-cp .env.example .env
-# Edit .env with your settings (see Configuration section below)
+cp .env.example .env        # then edit .env (see Configuration)
 ```
+> The platform runs fully in **demo mode** without any API keys — every agent works with mock/realistic data so you can evaluate it immediately.
 
-### 4. Run
-
+### 5. Run
 ```bash
+# Make sure Ollama is running (ollama serve, or the Ollama desktop app)
 cd backend
 python main.py
 ```
-
 Open **http://localhost:8000** in your browser.
 
 ---
 
-## ⚙️ Configuration
+## ⚙ Configuration
 
-Edit `.env` in the project root:
+Edit `.env` in the project root (copy from `.env.example`):
 
-| Variable | Description | Required |
+| Variable | Description | Needed for |
 |---|---|---|
-| `OLLAMA_MODEL` | Ollama model name (e.g. `qwen3:latest`) | Yes |
-| `EMAIL_ADDRESS` | Gmail address for sending emails | For email |
-| `EMAIL_PASSWORD` | Gmail App Password (not your login password) | For email |
-| `YOUTUBE_API_KEY` | YouTube Data API v3 key | For AI-Times |
-| `GMAIL_CREDENTIALS_FILE` | Path to Gmail OAuth credentials JSON | For Mailman |
-| `STOCK_TICKERS` | Comma-separated list of ticker symbols | Optional |
+| `OLLAMA_MODEL` | Model name, e.g. `qwen3:latest` | always |
+| `EMAIL_ADDRESS` / `EMAIL_PASSWORD` | Gmail + 16-char **App Password** | sending email |
+| `EMAIL_RECIPIENT` | Where digests are sent | sending email |
+| `YOUTUBE_API_KEY` | YouTube Data API v3 key | AI-Times (live) |
+| `GMAIL_CREDENTIALS_FILE` | Path to OAuth client JSON | Mailman (live) |
+| `KEY_PEOPLE` | Comma-separated VIP emails for alerts | Mailman |
+| `STOCK_TICKERS` | Comma-separated tickers (25 default) | Wallstreet |
+| `SCHEDULE_*` | Cron expressions per agent | scheduling |
+| `CPU/RAM/DISK_THRESHOLD_PCT` | Resource pause thresholds | orchestrator |
 
-### Gmail App Password Setup
-1. Enable 2-Factor Authentication on your Google account
-2. Go to [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
-3. Create an App Password for "Mail"
-4. Paste the 16-character password as `EMAIL_PASSWORD` in `.env`
+### Gmail App Password (for sending email)
+1. Enable 2-Factor Auth on your Google account
+2. Visit [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+3. Create an App Password → paste the 16-char value as `EMAIL_PASSWORD`
 
-### YouTube API Key Setup
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a project → Enable **YouTube Data API v3**
-3. Create API Key → copy it as `YOUTUBE_API_KEY`
-4. Leave blank to run in demo mode (mock videos)
+### Gmail OAuth (for Mailman to read your inbox — optional)
+1. [Google Cloud Console](https://console.cloud.google.com/) → create a project
+2. **APIs & Services → Library** → enable **Gmail API**
+3. **OAuth consent screen** → External → add yourself as a **Test user**
+4. **Credentials → Create → OAuth client ID → Desktop app** → download JSON
+5. Save it as `gmail_credentials.json` in the project root
+6. Authorize once: `cd backend && python gmail_auth.py` (opens browser; saves a reusable token)
+> Without these, Mailman runs in **demo mode** classifying a realistic mock inbox.
 
-### Gmail OAuth (Mailman)
-1. In Google Cloud Console → OAuth 2.0 → Desktop App credentials
-2. Download as `gmail_credentials.json` in the project root
-3. First run will open a browser for OAuth consent
-4. Leave blank to run Mailman in demo mode (classifies mock emails)
+### YouTube API (for AI-Times live videos — optional)
+Console → enable **YouTube Data API v3** → create API key → set `YOUTUBE_API_KEY`.
+Without it, AI-Times uses a curated mock list.
 
 ---
 
-## 🤖 Agents
+## 🤖 The Agents
 
-### 1. AI-Times (`ai_times`)
-- Searches YouTube for top AI/ML videos from the past 7 days
-- LLM writes an intro paragraph
-- Sends a polished HTML email digest
-- **Schedule:** Daily at 08:00 UTC
-- **Fallback:** Works in demo mode without a YouTube API key
+### Agent‑1 — AI‑Times · `0 8 * * *` (08:00 daily)
+Fetches **5 AI-news** + **5 creator/educator** YouTube videos (last 24–48h), Qwen3 writes a digest intro, sends an HTML email. Dashboard tab shows both video sets with thumbnails + Refresh. Demo mode without an API key.
 
-### 2. Mailman (`mailman`)
-- Fetches unread Gmail messages (up to 20 per run)
-- Classifies each with Qwen3: category + priority + 1-sentence summary
-- Auto-labels (`AI/Work`, `AI/Urgent`, etc.) and stars high-priority emails
-- Sends an alert email when high-priority emails are detected
-- **Schedule:** Every 15 minutes
-- **Fallback:** Demo mode with mock emails if no Gmail credentials
+### Agent‑2 — Mailman · `*/15 * * * *` (every 15 min)
+Connects to Gmail via **OAuth 2.0**, classifies each unread email with Qwen3 into **Urgent / Action Required / Follow-Up / Newsletter / Notification / Personal / Other**, applies `AI/<Category>` Gmail labels, stars high-priority mail, and sends an instant alert for urgent or **key-people** emails. Dashboard tab shows the category breakdown, classified-email list with AI summaries, key-people config, and a manual scan trigger. Demo mode without credentials.
 
-### 3. Wallstreet Wolf (`wallstreet_wolf`)
-- Tracks 25 stocks via Yahoo Finance (no API key needed)
-- Qwen3 generates a punchy 3-sentence market commentary on the top movers
-- Sends a formatted HTML market report email
-- **Schedule:** Weekdays at 16:30 UTC (after US market close)
+### Agent‑3 — Wallstreet Wolf · `30 16 * * 1-5` (16:30 weekdays)
+Tracks **25 stocks** plus **gold, silver, and 5 FX pairs** via Yahoo Finance. Qwen3 writes a 3-sentence market commentary. Dashboard shows Top 5 Gainers, Top 5 Losers, metals/FX, and the full watchlist. Daily HTML market-brief email.
 
-### 4. Hacker Digest (`hacker_digest`)
-- Fetches top 30 stories from Hacker News public API (no key needed)
-- Qwen3 curates the 10 most interesting for a software engineer + adds takeaways
-- Sends a styled HTML digest email
-- **Schedule:** Daily at 09:00 UTC
+### Agent‑4 — Hacker Digest · `0 9 * * *` (09:00 daily) — *custom agent*
+> **Use-case proposal (150 words).** Software engineers face daily information overload from Hacker News — hundreds of stories compete for attention and reading them all is impossible. Hacker Digest solves this: it autonomously fetches the top stories from the free Hacker News Firebase API, then uses the local Qwen3 model to write a 15-word "why this matters to an engineer" takeaway for each, and delivers a curated digest by email every morning. It removes the 20-minute daily scroll and the fear of missing something important, surfacing only what's relevant with an instant rationale. The number of stories fetched and curated is user-configurable live from the dashboard, so it adapts to different reading appetites and time budgets. Because curation runs on a local LLM, it costs nothing per run and no browsing data is ever sent to a third party — a private, zero-cost, always-on research assistant.
 
-### 5. Orchestrator (Central Manager)
-- Monitors CPU, RAM, Disk every 30 seconds
-- Enforces resource thresholds — pauses agent launches if system is stressed
-- Semaphore-based LLM queue (max 2 concurrent calls, deadlock prevention)
-- Broadcasts all events to the dashboard via WebSocket
+Uses the **Hacker News API** (no key) + Qwen3. Configurable fetch/curate counts. Daily HTML digest email.
+
+### Orchestrator (central manager)
+Monitors CPU/RAM/Disk/threads every **5s**; alarms at 90% with corrective guidance; pauses agent launches above 85%; serializes LLM calls with a **semaphore** (deadlock prevention); a **watchdog** detects crashed agent threads and recovers state without restarting the platform; broadcasts all events over WebSocket.
 
 ---
 
 ## 📊 Dashboard
 
-Access at **http://localhost:8000**
+**http://localhost:8000** — a modern AI-operations console:
 
-| Tab | Description |
+| Tab | Contents |
 |---|---|
-| Dashboard | Live CPU/RAM/Disk gauges, agent status cards, real-time event feed, resource chart |
-| Agents | Detailed cards for each agent — run now, force run, last result |
-| Scheduler | Next run times, update cron expressions live |
-| Stocks | Latest stock snapshots, sorted by % change |
-| Emails | Full history of sent emails per agent |
-| Logs | Searchable log stream, filterable by agent |
+| **Dashboard** | KPI cards w/ trend deltas, AI Operations chart, Live Activity, Top Performing Agents (sparklines), Model-Performance & System-Health donuts, **Cost-Optimization** card, infrastructure gauges |
+| **Agents** | Detailed cards — Run Now / Force, last result, duration |
+| **Scheduler** | Cron jobs + next-run times, editable live |
+| **AI-Times** | Two-column video gallery with thumbnails |
+| **Mailman** | Category breakdown, classified emails, key-people config |
+| **Wallstreet** | Commentary, gainers/losers, metals/FX, watchlist |
+| **Hacker Digest** | Ranked story cards with AI takeaways, configurable params |
+| **Logs** | Filterable agent log stream |
 
 ---
 
-## 🛠️ API Reference
+## 🧠 Key Design Decisions
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/status` | Full orchestrator + agent status |
-| `POST` | `/api/agents/{name}/trigger` | Trigger agent manually |
-| `GET` | `/api/scheduler/jobs` | List scheduled jobs + next runs |
-| `PUT` | `/api/scheduler/{name}` | Update agent cron schedule |
-| `GET` | `/api/stocks` | Latest stock snapshots |
-| `GET` | `/api/emails` | Email send history |
-| `GET` | `/api/logs` | Agent logs (filterable) |
-| `GET` | `/api/metrics/history` | Historical CPU/RAM/Disk |
-| `WS` | `/ws` | Real-time event stream |
+| Decision | Why |
+|---|---|
+| `think: false` on all LLM calls | Qwen3's chain-of-thought isn't needed for classify/summarize — cuts per-call time ~90s → ~10s |
+| `Semaphore(1)` LLM client | One Qwen3 call at a time prevents CPU contention; 10-min queue timeout prevents deadlock |
+| SQLite WAL mode | Concurrent reads during writes — agents log while the API serves the dashboard |
+| 5-second metric broadcast | Meets the ≤5s live-dashboard requirement |
+| Agent watchdog thread | Detects dead threads, marks `crashed`, recovers state — no zombie processes |
+| Demo mode on every agent | Fully demonstrable with zero API keys |
+| Local-path config resolver | Credential paths resolve to project root regardless of working dir |
 
 ---
 
 ## 📁 Project Structure
 
 ```
-multi-agent-platform/
+agentos-command-center/
 ├── backend/
-│   ├── main.py              # FastAPI app + WebSocket
-│   ├── orchestrator.py      # Central orchestrator
-│   ├── scheduler.py         # APScheduler cron integration
-│   ├── database.py          # SQLAlchemy models + SQLite
-│   ├── llm_client.py        # Ollama client with semaphore queue
-│   ├── email_utils.py       # SMTP email helper
-│   ├── config.py            # All configuration
+│   ├── main.py              # FastAPI app, WebSocket, REST endpoints
+│   ├── orchestrator.py      # Agent lifecycle, metrics (5s), watchdog
+│   ├── scheduler.py         # APScheduler cron, live reschedule
+│   ├── llm_client.py        # Thread-safe Qwen3 client (semaphore, think:false)
+│   ├── database.py          # SQLAlchemy models, SQLite WAL
+│   ├── email_utils.py       # SMTP HTML email
+│   ├── config.py            # All config from .env
+│   ├── gmail_auth.py        # One-time Gmail OAuth setup helper
 │   └── agents/
-│       ├── base_agent.py    # Abstract base — run lifecycle
-│       ├── ai_times.py      # YouTube → email digest
-│       ├── mailman.py       # Gmail classifier
-│       ├── wallstreet_wolf.py  # Stock tracker
-│       └── hacker_digest.py # HN story curator
+│       ├── base_agent.py    # Abstract base — run-record lifecycle
+│       ├── ai_times.py      # Agent-1
+│       ├── mailman.py       # Agent-2
+│       ├── wallstreet_wolf.py  # Agent-3
+│       └── hacker_digest.py # Agent-4
 ├── frontend/
-│   ├── index.html           # Dashboard SPA
-│   ├── style.css            # Dark theme
-│   └── app.js               # WebSocket + REST client
+│   ├── index.html           # Dashboard (8 tabs)
+│   ├── app.js               # WebSocket, charts, tab loaders
+│   └── style.css            # Dark operations theme
 ├── data/                    # SQLite DB + Gmail token (gitignored)
+├── architecture.svg / .png  # Architecture diagram
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -215,25 +247,28 @@ multi-agent-platform/
 
 ---
 
-## 🔒 Security Notes
+## 🔒 Security
 
-- Never commit `.env` — it contains your email password and API keys
-- `data/` is gitignored — contains the database and Gmail OAuth token
-- Gmail OAuth token is stored locally only (`data/gmail_token.json`)
-- Ollama runs entirely on your machine — no data leaves your system
+- `.env`, `gmail_credentials.json`, and `data/` (DB + OAuth token) are **gitignored** — never committed.
+- All AI inference is **local** (Ollama) — no email, financial, or document data leaves your machine.
+- The server binds `localhost` — not exposed to the internet.
+- Gmail OAuth token is stored locally only and can be revoked anytime in your Google account.
 
 ---
 
-## 📋 Requirements Met
+## ✅ Requirements Coverage
 
-- ✅ All AI inference is LOCAL (Ollama + Qwen3)
-- ✅ Python 3.12 backend (FastAPI)
-- ✅ Plain HTML/JS frontend (no build step)
-- ✅ SQLite storage
-- ✅ 5 agents: Orchestrator, AI-Times, Mailman, Wallstreet Wolf, Hacker Digest
-- ✅ Resource monitoring with thresholds
-- ✅ LLM scheduling with deadlock prevention (semaphore)
-- ✅ Cron-based scheduling (APScheduler)
-- ✅ Web dashboard with real-time WebSocket updates
-- ✅ Email digests (HTML)
-- ✅ Demo modes for agents that need external credentials
+- ✅ Local LLM (Ollama + Qwen3) — **no hosted LLM APIs**
+- ✅ Python 3.12 backend (FastAPI) · plain HTML/JS frontend · SQLite storage
+- ✅ Orchestrator: live CPU/RAM/Disk/thread monitoring (≤5s), 90% alarm + action, LLM semaphore, crash detection & recovery
+- ✅ AI-Times: 5 news + 5 personality videos, daily HTML digest, dashboard tab + Refresh
+- ✅ Mailman: Gmail OAuth, 7-category LLM classification, labels/stars, key-people alerts, dashboard tab + scan
+- ✅ Wallstreet Wolf: 20+ stocks, gainers/losers/watchlist, metals + FX, LLM commentary, daily email
+- ✅ Agent-4 (Hacker Digest): external API + LLM, configurable params, scheduled email, 150-word proposal
+- ✅ Real-time web dashboard (WebSocket)
+
+---
+
+## 📄 License
+
+Released under the [MIT License](LICENSE).

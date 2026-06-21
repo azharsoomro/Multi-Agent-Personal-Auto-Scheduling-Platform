@@ -14,7 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from database import init_db, get_db, AgentRun, AgentLog, StockSnapshot, EmailRecord, SystemMetric
+from database import (init_db, get_db, AgentRun, AgentLog, StockSnapshot, EmailRecord,
+                      SystemMetric, VideoRecord, HNStoryRecord, MarketCommentary, MailmanRecord)
 from orchestrator import (
     trigger_agent, get_agent_status, get_orchestrator_status,
     set_broadcast, start_metrics_collector, stop as stop_orchestrator,
@@ -99,6 +100,18 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Multi-Agent Platform", version="1.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+
+@app.middleware("http")
+async def _no_cache_static(request, call_next):
+    """Force browsers to always re-fetch the dashboard assets — no stale UI."""
+    response = await call_next(request)
+    if request.url.path.startswith("/static") or request.url.path == "/":
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
@@ -125,7 +138,10 @@ async def websocket_endpoint(ws: WebSocket):
 # ── REST endpoints ────────────────────────────────────────────────────────────
 @app.get("/")
 def serve_dashboard():
-    return FileResponse(str(FRONTEND_DIR / "index.html"))
+    return FileResponse(
+        str(FRONTEND_DIR / "index.html"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"}
+    )
 
 
 @app.get("/api/status")
@@ -225,6 +241,224 @@ def api_metrics_history(limit: int = Query(60, le=300)):
 @app.get("/api/ollama/status")
 def api_ollama_status():
     return {"running": is_ollama_running(), "models": list_models()}
+
+
+def _pct_delta(cur: int, prev: int) -> float:
+    if prev == 0:
+        return 100.0 if cur > 0 else 0.0
+    return round((cur - prev) / prev * 100, 1)
+
+
+@app.get("/api/dashboard/stats")
+def api_dashboard_stats():
+    """Aggregate KPIs + trend deltas + cost-avoided for the operations dashboard."""
+    from datetime import datetime, timedelta
+    from llm_client import get_stats as _llm_stats
+
+    now = datetime.utcnow()
+    d1, d2 = now - timedelta(days=1), now - timedelta(days=2)
+
+    with get_db() as db:
+        runs = db.query(AgentRun).all()
+        total_runs   = len(runs)
+        success_runs = len([r for r in runs if r.status == "success"])
+        failed_runs  = len([r for r in runs if r.status in ("failed", "crashed")])
+        durations    = [r.duration_s for r in runs if r.duration_s]
+        avg_dur      = round(sum(durations) / len(durations), 2) if durations else 0
+
+        runs_today = len([r for r in runs if r.started_at and r.started_at >= d1])
+        runs_prev  = len([r for r in runs if r.started_at and d2 <= r.started_at < d1])
+        succ_today = len([r for r in runs if r.started_at and r.started_at >= d1 and r.status == "success"])
+        succ_prev  = len([r for r in runs if r.started_at and d2 <= r.started_at < d1 and r.status == "success"])
+
+        total_emails = db.query(EmailRecord).count()
+        total_stocks = db.query(StockSnapshot).count()
+        total_videos = db.query(VideoRecord).count()
+        total_stories= db.query(HNStoryRecord).count()
+        total_mails  = db.query(MailmanRecord).count()
+
+    llm = _llm_stats()
+    live_calls  = llm.get("total", 0)
+    llm_avg_ms  = llm.get("avg_ms", 0)
+    llm_errors  = llm.get("errors", 0)
+
+    # Durable estimate of cumulative LLM calls from DB content (survives restarts).
+    # Per-agent call factors: ai_times=1 intro, wallstreet=1 commentary,
+    # hacker=1 overview + 1 per story, mailman=1 per classified email.
+    with get_db() as db:
+        n_ai    = db.query(AgentRun).filter_by(agent_name="ai_times").count()
+        n_ws    = db.query(AgentRun).filter_by(agent_name="wallstreet_wolf").count()
+        n_hd    = db.query(AgentRun).filter_by(agent_name="hacker_digest").count()
+    est_calls = (n_ai * 1) + (n_ws * 1) + (n_hd * 1) + total_stories + total_mails
+    llm_calls = max(est_calls, live_calls)
+
+    # Estimated tokens & cloud-cost avoided (GPT-4-class blended rate)
+    est_tokens  = llm_calls * 850          # ~850 tokens / call (prompt+completion)
+    cost_per_call = 0.03                   # blended GPT-4-class $/call
+    cost_avoided = round(llm_calls * cost_per_call, 2)
+
+    return {
+        "total_runs": total_runs,
+        "success_runs": success_runs,
+        "failed_runs": failed_runs,
+        "success_rate": round(success_runs / total_runs * 100, 1) if total_runs else 100.0,
+        "avg_duration_s": avg_dur,
+        "runs_today": runs_today,
+        "runs_delta": _pct_delta(runs_today, runs_prev),
+        "success_delta": _pct_delta(succ_today, succ_prev),
+        "total_emails": total_emails,
+        "total_stocks": total_stocks,
+        "total_videos": total_videos,
+        "total_stories": total_stories,
+        "total_classified": total_mails,
+        "llm_calls": llm_calls,
+        "llm_avg_ms": llm_avg_ms,
+        "llm_errors": llm_errors,
+        "est_tokens": est_tokens,
+        "cost_avoided": cost_avoided,
+        "cost_per_call": cost_per_call,
+    }
+
+
+@app.get("/api/dashboard/agent-perf")
+def api_agent_perf():
+    """Per-agent run counts, success rate, and recent durations for sparklines."""
+    with get_db() as db:
+        out = []
+        for name in ("ai_times", "mailman", "wallstreet_wolf", "hacker_digest"):
+            rows = (db.query(AgentRun).filter_by(agent_name=name)
+                    .order_by(AgentRun.started_at.desc()).limit(12).all())
+            total = db.query(AgentRun).filter_by(agent_name=name).count()
+            succ  = db.query(AgentRun).filter_by(agent_name=name, status="success").count()
+            spark = [round(r.duration_s, 1) for r in reversed(rows) if r.duration_s]
+            out.append({
+                "agent": name,
+                "runs": total,
+                "success_rate": round(succ / total * 100) if total else 0,
+                "spark": spark or [1],
+            })
+    return out
+
+
+# ── AI-Times endpoints ────────────────────────────────────────────────────────
+@app.get("/api/ai-times/videos")
+def api_aitimes_videos(category: str = Query(None), limit: int = Query(20, le=100)):
+    with get_db() as db:
+        q = db.query(VideoRecord).order_by(VideoRecord.fetched_at.desc())
+        if category:
+            q = q.filter_by(category=category)
+        rows = q.limit(limit).all()
+        return [{"id": r.id, "title": r.title, "channel": r.channel, "url": r.url,
+                 "thumbnail": r.thumbnail, "description": r.description,
+                 "published": r.published, "category": r.category,
+                 "fetched_at": r.fetched_at.isoformat()} for r in rows]
+
+
+# ── Mailman endpoints ─────────────────────────────────────────────────────────
+@app.get("/api/mailman/records")
+def api_mailman_records(limit: int = Query(50, le=200)):
+    with get_db() as db:
+        rows = db.query(MailmanRecord).order_by(MailmanRecord.processed_at.desc()).limit(limit).all()
+        return [{"id": r.id, "subject": r.subject, "sender": r.sender,
+                 "category": r.category, "priority": r.priority,
+                 "summary": r.llm_summary, "starred": r.starred,
+                 "processed_at": r.processed_at.isoformat()} for r in rows]
+
+
+@app.get("/api/mailman/stats")
+def api_mailman_stats():
+    with get_db() as db:
+        rows = db.query(MailmanRecord).all()
+        counts: dict = {}
+        for r in rows:
+            counts[r.category] = counts.get(r.category, 0) + 1
+        return {"total": len(rows), "by_category": counts}
+
+
+# ── Wallstreet Wolf endpoints ─────────────────────────────────────────────────
+@app.get("/api/wallstreet/commentary")
+def api_wallstreet_commentary():
+    with get_db() as db:
+        row = db.query(MarketCommentary).order_by(MarketCommentary.created_at.desc()).first()
+        if not row:
+            return {"commentary": None, "created_at": None}
+        return {"commentary": row.commentary, "created_at": row.created_at.isoformat()}
+
+
+@app.get("/api/wallstreet/metals")
+def api_metals():
+    from config import METAL_TICKERS, _METAL_LABELS_MAP
+    with get_db() as db:
+        results = []
+        for sym in METAL_TICKERS:
+            row = (db.query(StockSnapshot).filter_by(ticker=sym)
+                   .order_by(StockSnapshot.captured_at.desc()).first())
+            if row:
+                results.append({"ticker": sym, "label": _METAL_LABELS_MAP.get(sym, sym),
+                                 "price": row.price, "change_pct": row.change_pct,
+                                 "captured_at": row.captured_at.isoformat()})
+        return results
+
+
+@app.get("/api/wallstreet/fx")
+def api_fx():
+    from config import FX_PAIRS, _FX_LABELS_MAP
+    with get_db() as db:
+        results = []
+        for sym in FX_PAIRS:
+            row = (db.query(StockSnapshot).filter_by(ticker=sym)
+                   .order_by(StockSnapshot.captured_at.desc()).first())
+            if row:
+                results.append({"ticker": sym, "label": _FX_LABELS_MAP.get(sym, sym),
+                                 "price": row.price, "change_pct": row.change_pct,
+                                 "captured_at": row.captured_at.isoformat()})
+        return results
+
+
+# ── Hacker Digest endpoints ───────────────────────────────────────────────────
+@app.get("/api/hacker-digest/stories")
+def api_hn_stories(limit: int = Query(10, le=50)):
+    with get_db() as db:
+        rows = db.query(HNStoryRecord).order_by(HNStoryRecord.fetched_at.desc()).limit(limit).all()
+        return [{"id": r.id, "hn_id": r.hn_id, "title": r.title, "url": r.url,
+                 "score": r.score, "comments": r.comments, "by": r.by,
+                 "hn_url": r.hn_url, "takeaway": r.takeaway,
+                 "fetched_at": r.fetched_at.isoformat()} for r in rows]
+
+
+# ── Config endpoints (key-people + hacker digest params) ──────────────────────
+@app.get("/api/config/key-people")
+def api_get_key_people():
+    from config import KEY_PEOPLE
+    return {"key_people": KEY_PEOPLE}
+
+
+class KeyPeopleUpdate(BaseModel):
+    key_people: list[str]
+
+@app.put("/api/config/key-people")
+def api_set_key_people(body: KeyPeopleUpdate):
+    import config as _cfg
+    _cfg.KEY_PEOPLE = [e.strip() for e in body.key_people if e.strip()]
+    return {"key_people": _cfg.KEY_PEOPLE}
+
+
+@app.get("/api/config/hacker-digest")
+def api_get_hd_config():
+    from config import HACKER_STORIES_FETCH, HACKER_STORIES_CURATE
+    return {"fetch": HACKER_STORIES_FETCH, "curate": HACKER_STORIES_CURATE}
+
+
+class HDConfigUpdate(BaseModel):
+    fetch: int = 30
+    curate: int = 10
+
+@app.put("/api/config/hacker-digest")
+def api_set_hd_config(body: HDConfigUpdate):
+    import config as _cfg
+    _cfg.HACKER_STORIES_FETCH  = max(10, min(100, body.fetch))
+    _cfg.HACKER_STORIES_CURATE = max(5,  min(30,  body.curate))
+    return {"fetch": _cfg.HACKER_STORIES_FETCH, "curate": _cfg.HACKER_STORIES_CURATE}
 
 
 if __name__ == "__main__":
