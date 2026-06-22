@@ -7,6 +7,14 @@ A fully operational, **100% local** multi-agent AI platform. A central orchestra
 
 ---
 
+## 🎥 Demo Video
+
+**▶ Watch the full demo (all 5 agents running live):** https://youtu.be/vLkWbJ53Gkw
+
+[![AgentOS Command Center — Demo](https://img.youtube.com/vi/vLkWbJ53Gkw/maxresdefault.jpg)](https://youtu.be/vLkWbJ53Gkw)
+
+---
+
 ## 📌 Use-Case Proposal (Agent-4 — Hacker Digest)
 
 > *~150 words — the required proposal for the custom "Your Choice" agent.*
