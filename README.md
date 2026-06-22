@@ -7,6 +7,14 @@ A fully operational, **100% local** multi-agent AI platform. A central orchestra
 
 ---
 
+## 📌 Use-Case Proposal (Agent-4 — Hacker Digest)
+
+> *~150 words — the required proposal for the custom "Your Choice" agent.*
+
+AgentOS Command Center tackles a problem every organization faces: knowledge workers lose two to three hours daily to repetitive information work — triaging email, scanning markets, and reading industry news. Our custom agent, **Hacker Digest**, demonstrates the solution. Software engineers suffer constant information overload from Hacker News, where hundreds of stories compete for attention and reading everything is impossible. Hacker Digest autonomously fetches the top stories through the free Hacker News API, then uses the local Qwen3 model to generate a concise "why this matters to an engineer" takeaway for each, delivering a curated email digest every morning. It eliminates the twenty-minute daily scroll and the fear of missing critical developments, surfacing only what is relevant with instant rationale. Story count and curation depth are configurable live from the dashboard. Because all inference runs locally, it costs nothing per run and no browsing data ever leaves the machine.
+
+---
+
 ## 📑 Table of Contents
 - [What It Does](#-what-it-does)
 - [Architecture](#-architecture)
@@ -175,9 +183,7 @@ Connects to Gmail via **OAuth 2.0**, classifies each unread email with Qwen3 int
 Tracks **25 stocks** plus **gold, silver, and 5 FX pairs** via Yahoo Finance. Qwen3 writes a 3-sentence market commentary. Dashboard shows Top 5 Gainers, Top 5 Losers, metals/FX, and the full watchlist. Daily HTML market-brief email.
 
 ### Agent‑4 — Hacker Digest · `0 9 * * *` (09:00 daily) — *custom agent*
-> **Use-case proposal (150 words).** Software engineers face daily information overload from Hacker News — hundreds of stories compete for attention and reading them all is impossible. Hacker Digest solves this: it autonomously fetches the top stories from the free Hacker News Firebase API, then uses the local Qwen3 model to write a 15-word "why this matters to an engineer" takeaway for each, and delivers a curated digest by email every morning. It removes the 20-minute daily scroll and the fear of missing something important, surfacing only what's relevant with an instant rationale. The number of stories fetched and curated is user-configurable live from the dashboard, so it adapts to different reading appetites and time budgets. Because curation runs on a local LLM, it costs nothing per run and no browsing data is ever sent to a third party — a private, zero-cost, always-on research assistant.
-
-Uses the **Hacker News API** (no key) + Qwen3. Configurable fetch/curate counts. Daily HTML digest email.
+The "Your Choice" agent — see the [Use-Case Proposal](#-use-case-proposal-agent-4--hacker-digest) at the top. Uses the **Hacker News API** (no key) + Qwen3, with configurable fetch/curate counts and a daily HTML digest email. Satisfies the custom-agent requirements: **one live external API + one LLM processing step + a scheduled action + a dedicated dashboard tab with user-configurable parameters.**
 
 ### Orchestrator (central manager)
 Monitors CPU/RAM/Disk/threads every **5s**; alarms at 90% with corrective guidance; pauses agent launches above 85%; serializes LLM calls with a **semaphore** (deadlock prevention); a **watchdog** detects crashed agent threads and recovers state without restarting the platform; broadcasts all events over WebSocket.
@@ -264,7 +270,7 @@ agentos-command-center/
 - ✅ AI-Times: 5 news + 5 personality videos, daily HTML digest, dashboard tab + Refresh
 - ✅ Mailman: Gmail OAuth, 7-category LLM classification, labels/stars, key-people alerts, dashboard tab + scan
 - ✅ Wallstreet Wolf: 20+ stocks, gainers/losers/watchlist, metals + FX, LLM commentary, daily email
-- ✅ Agent-4 (Hacker Digest): external API + LLM, configurable params, scheduled email, 150-word proposal
+- ✅ Agent-4 (Hacker Digest): external API + LLM, configurable params, scheduled email, **150-word proposal above**
 - ✅ Real-time web dashboard (WebSocket)
 
 ---
